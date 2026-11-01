@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="lt_primary">#B9C3FF</color>
+    <color name="lt_on_primary">#00218E</color>
+    <color name="lt_primary_container">#1739B0</color>
+    <color name="lt_on_primary_container">#DDE1FF</color>
+    <color name="lt_secondary">#C4C5DD</color>
+    <color name="lt_surface">#131318</color>
+    <color name="lt_surface_variant">#46464F</color>
+    <color name="lt_background">#101014</color>
+    <color name="lt_card">#1B1B21</color>
+    <color name="lt_text_primary">#E5E1E9</color>
+    <color name="lt_text_secondary">#C4C5DD</color>
+    <color name="lt_success">#6BD48F</color>
+    <color name="lt_error">#FFB4AB</color>
+    <color name="lt_warning">#FFB95C</color>
+    <color name="lt_divider">#2C2C34</color>
+    <color name="lt_ball">#B9C3FF</color>
+    <color name="lt_ball_running">#5BE0A0</color>
+    <color name="lt_ball_error">#FF8A80</color>
+</resources>

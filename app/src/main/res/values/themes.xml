@@ -1,0 +1,36 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Base.AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/lt_primary</item>
+        <item name="colorOnPrimary">@color/lt_on_primary</item>
+        <item name="colorPrimaryContainer">@color/lt_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/lt_on_primary_container</item>
+        <item name="colorSecondary">@color/lt_secondary</item>
+        <item name="colorSurface">@color/lt_surface</item>
+        <item name="colorSurfaceVariant">@color/lt_surface_variant</item>
+        <item name="android:colorBackground">@color/lt_background</item>
+        <item name="android:navigationBarColor">@color/lt_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="23">true</item>
+    </style>
+
+    <style name="AppTheme" parent="Base.AppTheme" />
+
+    <style name="Theme.Transparent" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
+    <style name="Widget.LingTouch.Card" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardCornerRadius">18dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="cardBackgroundColor">@color/lt_card</item>
+        <item name="android:layout_marginBottom">12dp</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.Section" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textStyle">bold</item>
+    </style>
+</resources>

@@ -1,0 +1,7 @@
+<resources>
+    <dimen name="lt_space_xs">4dp</dimen>
+    <dimen name="lt_space_s">8dp</dimen>
+    <dimen name="lt_space_m">16dp</dimen>
+    <dimen name="lt_space_l">24dp</dimen>
+    <dimen name="lt_radius">18dp</dimen>
+</resources>
