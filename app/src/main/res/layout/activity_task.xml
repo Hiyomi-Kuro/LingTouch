@@ -73,6 +73,54 @@
                 android:textColor="@color/lt_text_secondary"
                 android:textSize="13sp" />
 
+
+            <TextView
+                android:id="@+id/taskReasoningToggle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingVertical="4dp"
+                android:text="@string/task_thinking"
+                android:textColor="@color/lt_primary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/taskReasoning"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_thinking"
+                android:padding="10dp"
+                android:textColor="@color/lt_text_secondary"
+                android:textIsSelectable="true"
+                android:textSize="12sp"
+                android:visibility="gone" />
+            <TextView
+                android:id="@+id/taskPlan"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textColor="@color/lt_text_secondary"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/taskBudget"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/lt_text_secondary"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/exportTaskButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:text="@string/action_export" />
+
             <com.google.android.material.progressindicator.LinearProgressIndicator
                 android:id="@+id/taskProgress"
                 android:layout_width="match_parent"

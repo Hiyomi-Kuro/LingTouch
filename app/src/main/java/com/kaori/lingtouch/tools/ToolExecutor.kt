@@ -3,22 +3,24 @@ package com.kaori.lingtouch.tools
 import android.content.Context
 import com.kaori.lingtouch.accessibility.AccessibilityBridge
 import com.kaori.lingtouch.accessibility.NodeMatcher
+import com.kaori.lingtouch.agent.ActionCommit
 import com.kaori.lingtouch.agent.ConfirmationBroker
+import com.kaori.lingtouch.agent.FailureKind
 import com.kaori.lingtouch.apps.AppRepository
 import com.kaori.lingtouch.ocr.OcrEngine
 import com.kaori.lingtouch.settings.SettingsRepository
 import com.kaori.lingtouch.shizuku.ShizukuManager
 import com.kaori.lingtouch.storage.TempResourceManager
+import com.kaori.lingtouch.util.bool
 import com.kaori.lingtouch.util.int
 import com.kaori.lingtouch.util.str
-import com.kaori.lingtouch.util.bool
 import com.kaori.lingtouch.util.Logx
 import com.kaori.lingtouch.vision.ScreenCaptureManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.math.max
 
 /**
  * Executes validated actions against real device APIs. Every tool reports what actually
@@ -62,13 +64,24 @@ class ToolExecutor(
                 "finish_task", "fail_task" -> ActionResult(
                     true, action.name, JSONObject().put("handled_by_agent", true)
                 )
-                else -> ActionResult(false, "未实现的操作 ${action.name}")
+                else -> ActionResult(
+                    false,
+                    "未实现的操作 ${action.name}",
+                    failure = FailureKind.INVALID_ARGS,
+                    commit = ActionCommit.FAILED
+                )
             }
         } catch (e: ActionValidationException) {
-            ActionResult(false, e.message ?: "参数无效")
+            val message = e.message ?: "参数无效"
+            ActionResult(false, message, failure = FailureKind.fromMessage(message), commit = ActionCommit.FAILED)
         } catch (t: Throwable) {
             Logx.e("Tool", "执行 ${action.name} 异常", t)
-            ActionResult(false, "执行异常：${t.message ?: t.javaClass.simpleName}")
+            ActionResult(
+                false,
+                "执行异常：${t.message ?: t.javaClass.simpleName}",
+                failure = FailureKind.UNKNOWN,
+                commit = ActionCommit.FAILED
+            )
         }
     }
 
@@ -78,12 +91,21 @@ class ToolExecutor(
         if (apps.cached().isEmpty()) apps.scan()
         val query = args.str("package").ifBlank { args.str("app") }
         val outcome = apps.launchApp(query)
-        if (!outcome.success) return ActionResult(false, outcome.message, retryable = true)
-        kotlinx.coroutines.delay(700)
+        if (!outcome.success) {
+            return ActionResult(false, outcome.message, retryable = true, failure = FailureKind.TARGET_NOT_FOUND)
+        }
+        delay(700)
         val foreground = AccessibilityBridge.foregroundPackage()
+        val targetPackage = outcome.component?.substringBefore('/').orEmpty()
+        val matched = targetPackage.isBlank() || foreground.isBlank() || foreground == targetPackage
         return ActionResult(
-            true, outcome.message,
-            JSONObject().put("component", outcome.component ?: "").put("foreground", foreground)
+            matched,
+            if (matched) outcome.message else "${outcome.message}，但前台应用是 $foreground",
+            JSONObject().put("component", outcome.component ?: "")
+                .put("foreground", foreground)
+                .put("target_package", targetPackage),
+            retryable = !matched,
+            failure = if (matched) null else FailureKind.APP_NOT_FOREGROUND
         )
     }
 
@@ -92,27 +114,45 @@ class ToolExecutor(
         val pkg = args.str("package")
         var cls = args.str("activity")
         if (cls.startsWith(".")) cls = pkg + cls
-        if (pkg.isBlank() || cls.isBlank()) return ActionResult(false, "需要 package 与 activity")
+        if (pkg.isBlank() || cls.isBlank()) {
+            return ActionResult(false, "需要 package 与 activity", failure = FailureKind.INVALID_ARGS)
+        }
         val outcome = apps.launchComponent(pkg, cls)
         if (outcome.success) {
-            kotlinx.coroutines.delay(700)
+            delay(700)
+            val foreground = AccessibilityBridge.foregroundPackage()
+            val matched = foreground.isBlank() || foreground == pkg
             return ActionResult(
-                true, outcome.message,
+                matched,
+                if (matched) outcome.message else "${outcome.message}，但前台应用是 $foreground",
                 JSONObject().put("component", "$pkg/$cls")
-                    .put("foreground", AccessibilityBridge.foregroundPackage())
+                    .put("foreground", foreground)
+                    .put("target_package", pkg),
+                retryable = !matched,
+                failure = if (matched) null else FailureKind.APP_NOT_FOREGROUND
             )
         }
         // Shizuku fallback (shell `am start`), still a whitelisted command.
         if (shizuku.state.value.permission) {
             val shell = shizuku.startActivity(pkg, cls)
             return if (shell.ok) {
-                kotlinx.coroutines.delay(900)
+                delay(900)
+                val foreground = AccessibilityBridge.foregroundPackage()
                 ActionResult(
-                    true, "已通过 Shizuku 启动（${shell.output.trim().take(120)}）",
-                    JSONObject().put("component", "$pkg/$cls").put("via", "shizuku")
+                    true,
+                    "已通过 Shizuku 启动（${shell.output.trim().take(120)}）",
+                    JSONObject().put("component", "$pkg/$cls")
+                        .put("via", "shizuku")
+                        .put("foreground", foreground)
+                        .put("target_package", pkg)
                 )
             } else {
-                ActionResult(false, "${outcome.message}；Shizuku 也失败：${shell.error ?: shell.output.take(160)}", retryable = true)
+                ActionResult(
+                    false,
+                    "${outcome.message}；Shizuku 也失败：${shell.error ?: shell.output.take(160)}",
+                    retryable = true,
+                    failure = FailureKind.PERMISSION_DENIED
+                )
             }
         }
         return ActionResult(false, outcome.message, retryable = true)
@@ -143,7 +183,7 @@ class ToolExecutor(
 
     private suspend fun activityInfo(args: JSONObject): ActionResult {
         val pkg = args.str("package")
-        if (pkg.isBlank()) return ActionResult(false, "需要 package")
+        if (pkg.isBlank()) return ActionResult(false, "需要 package", failure = FailureKind.INVALID_ARGS)
         val activities = apps.activities(pkg)
         val array = JSONArray()
         activities.forEach {
@@ -177,7 +217,7 @@ class ToolExecutor(
 
     private suspend fun uiTree(args: JSONObject): ActionResult {
         val tree = AccessibilityBridge.snapshot()
-            ?: return ActionResult(false, "无障碍服务未连接，无法读取界面", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接，无法读取界面", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val limit = args.int("limit", 120).let { if (it <= 0) 120 else it }
         val data = tree.toJson()
         data.put("prompt", tree.prompt(limit))
@@ -188,7 +228,7 @@ class ToolExecutor(
 
     private suspend fun screenText(): ActionResult {
         val tree = AccessibilityBridge.snapshot()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val text = tree.screenText()
         return ActionResult(
             true, if (text.isBlank()) "当前界面没有可访问文字" else "已提取界面文字",
@@ -200,7 +240,7 @@ class ToolExecutor(
     private suspend fun captureScreen(taskId: Long): ActionResult {
         val result = capture.capture(taskId)
         val value = result.getOrElse {
-            return ActionResult(false, "截图失败：${it.message}", retryable = true)
+            return ActionResult(false, "截图失败：${it.message}", retryable = true, failure = FailureKind.VISION_UNAVAILABLE)
         }
         val data = JSONObject()
             .put("source", value.source)
@@ -215,16 +255,28 @@ class ToolExecutor(
     private suspend fun runOcr(taskId: Long): ActionResult {
         val result = capture.capture(taskId)
         val value = result.getOrElse {
-            return ActionResult(false, "OCR 失败：${it.message}", retryable = true)
+            return ActionResult(false, "OCR 失败：${it.message}", retryable = true, failure = FailureKind.VISION_UNAVAILABLE)
         }
         val bitmap = value.bitmap
         return try {
             val ocrResult = withContext(Dispatchers.Default) { ocr.recognize(bitmap) }
+            val tree = AccessibilityBridge.snapshot()
+            val screenW = tree?.width?.takeIf { it > 0 } ?: bitmap.width
+            val screenH = tree?.height?.takeIf { it > 0 } ?: bitmap.height
+            val sx = screenW.toFloat() / bitmap.width.coerceAtLeast(1)
+            val sy = screenH.toFloat() / bitmap.height.coerceAtLeast(1)
             val lines = JSONArray()
             ocrResult.lines.take(80).forEach { line ->
+                val left = (line.left * sx).toInt()
+                val top = (line.top * sy).toInt()
+                val right = (line.right * sx).toInt()
+                val bottom = (line.bottom * sy).toInt()
+                val cx = (left + right) / 2
+                val cy = (top + bottom) / 2
                 lines.put(
                     JSONObject().put("text", line.text)
-                        .put("bounds", JSONArray(listOf(line.left, line.top, line.right, line.bottom)))
+                        .put("bounds", JSONArray(listOf(left, top, right, bottom)))
+                        .put("center", JSONArray(listOf(cx, cy)))
                 )
             }
             ActionResult(
@@ -232,9 +284,14 @@ class ToolExecutor(
                 JSONObject().put("text", ocrResult.fullText.take(6000))
                     .put("lines", lines)
                     .put("image", value.file?.absolutePath ?: "")
+                    .put("image_width", bitmap.width)
+                    .put("image_height", bitmap.height)
+                    .put("screen_width", screenW)
+                    .put("screen_height", screenH)
+                    .put("hint", "center 已是屏幕坐标，可直接作为 tap 的 x/y")
             )
         } catch (t: Throwable) {
-            ActionResult(false, "OCR 识别失败：${t.message}", retryable = true)
+            ActionResult(false, "OCR 识别失败：${t.message}", retryable = true, failure = FailureKind.VISION_UNAVAILABLE)
         } finally {
             bitmap.recycle()
         }
@@ -244,7 +301,7 @@ class ToolExecutor(
 
     private suspend fun tap(args: JSONObject): ActionResult {
         val service = AccessibilityBridge.service()
-            ?: return ActionResult(false, "无障碍服务未连接，无法点击", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接，无法点击", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val matcher = matcherFor(args)
         if (matcher != null) {
             val result = service.click(matcher)
@@ -257,38 +314,40 @@ class ToolExecutor(
                 val ok = service.tapPoint(x, y, 60)
                 return ActionResult(ok, if (ok) "已按坐标点击 ($x,$y)" else "坐标点击失败", retryable = !ok)
             }
-            return ActionResult(false, result.message, retryable = true)
+            return ActionResult(false, result.message, retryable = true, failure = FailureKind.TARGET_NOT_FOUND)
         }
         val x = args.int("x", -1)
         val y = args.int("y", -1)
-        if (x < 0 || y < 0) return ActionResult(false, "tap 需要 nodeId/text/resourceId 或 x/y 坐标")
+        if (x < 0 || y < 0) return ActionResult(false, "tap 需要 nodeId/text/resourceId 或 x/y 坐标", failure = FailureKind.INVALID_ARGS)
         val ok = service.tapPoint(x, y, 60)
         return ActionResult(ok, if (ok) "已点击 ($x,$y)" else "点击失败", retryable = !ok)
     }
 
     private suspend fun longPress(args: JSONObject): ActionResult {
         val service = AccessibilityBridge.service()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val matcher = matcherFor(args)
         if (matcher != null) {
             val result = service.longClick(matcher)
-            return ActionResult(result.success, result.message, retryable = !result.success)
+            return ActionResult(result.success, result.message, retryable = !result.success, changed = result.changed)
         }
         val x = args.int("x", -1)
         val y = args.int("y", -1)
-        if (x < 0 || y < 0) return ActionResult(false, "long_press 需要目标控件或坐标")
+        if (x < 0 || y < 0) return ActionResult(false, "long_press 需要目标控件或坐标", failure = FailureKind.INVALID_ARGS)
         val ok = service.tapPoint(x, y, 800)
         return ActionResult(ok, if (ok) "已长按 ($x,$y)" else "长按失败", retryable = !ok)
     }
 
     private suspend fun swipe(args: JSONObject): ActionResult {
         val service = AccessibilityBridge.service()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val x1 = args.int("x1", -1)
         val y1 = args.int("y1", -1)
         val x2 = args.int("x2", -1)
         val y2 = args.int("y2", -1)
-        if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0) return ActionResult(false, "swipe 需要 x1,y1,x2,y2")
+        if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0) {
+            return ActionResult(false, "swipe 需要 x1,y1,x2,y2", failure = FailureKind.INVALID_ARGS)
+        }
         val duration = args.int("durationMs", 300).coerceIn(50, 3000).toLong()
         val ok = service.swipe(x1, y1, x2, y2, duration)
         return ActionResult(ok, if (ok) "已滑动 ($x1,$y1)→($x2,$y2)" else "滑动失败", retryable = !ok)
@@ -296,31 +355,48 @@ class ToolExecutor(
 
     private suspend fun scroll(args: JSONObject): ActionResult {
         val service = AccessibilityBridge.service()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val direction = args.str("direction", "down")
         val matcher = if (args.has("nodeId")) matcherFor(args) else null
         val result = service.scroll(direction, matcher)
-        return ActionResult(result.success, result.message, retryable = !result.success)
+        return ActionResult(
+            result.success,
+            result.message,
+            JSONObject().put("changed", result.changed).put("direction", direction),
+            retryable = !result.success,
+            changed = result.changed,
+            failure = if (result.success) null else FailureKind.TARGET_NOT_FOUND
+        )
     }
 
     private suspend fun inputText(args: JSONObject): ActionResult {
         val service = AccessibilityBridge.service()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val text = args.str("text")
-        if (text.isBlank()) return ActionResult(false, "text 不能为空")
+        if (text.isBlank()) return ActionResult(false, "text 不能为空", failure = FailureKind.INVALID_ARGS)
         var matcher = matcherFor(args)
         if (matcher == null) {
             val editable = service.snapshot()?.findEditable()
-                ?: return ActionResult(false, "当前界面没有找到输入框", retryable = true)
+                ?: return ActionResult(false, "当前界面没有找到输入框", retryable = true, failure = FailureKind.TARGET_NOT_FOUND)
             matcher = NodeMatcher.fromNode(editable)
         }
         val result = service.inputText(matcher.copy(editableOnly = true), text)
-        return ActionResult(result.success, result.message, retryable = !result.success)
+        val confirmed = result.success && result.readback.isNotBlank() &&
+            (result.readback.trim() == text.trim() || result.readback.contains(text))
+        return ActionResult(
+            result.success,
+            result.message,
+            JSONObject().put("text_confirmed", confirmed).put("readback", result.readback.take(80)),
+            retryable = !result.success,
+            changed = confirmed,
+            failure = if (result.success) null else FailureKind.TARGET_NOT_FOUND,
+            commit = if (confirmed) ActionCommit.VERIFIED_SUCCESS else ActionCommit.DISPATCHED
+        )
     }
 
     private fun global(label: String, action: Int): ActionResult {
         val service = AccessibilityBridge.service()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val ok = when (action) {
             0 -> service.pressBack()
             1 -> service.pressHome()
@@ -333,10 +409,12 @@ class ToolExecutor(
 
     private suspend fun waitForUi(args: JSONObject): ActionResult {
         val service = AccessibilityBridge.service()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val text = args.str("text")
         val pkg = args.str("package")
-        if (text.isBlank() && pkg.isBlank()) return ActionResult(false, "wait_for_ui 需要 text 或 package")
+        if (text.isBlank() && pkg.isBlank()) {
+            return ActionResult(false, "wait_for_ui 需要 text 或 package", failure = FailureKind.INVALID_ARGS)
+        }
         val timeout = args.int("timeoutMs", 5000).coerceIn(200, 30_000).toLong()
         val textOk = if (text.isNotBlank()) service.waitForText(text, timeout) else true
         val pkgOk = if (pkg.isNotBlank()) service.waitForPackage(pkg, if (text.isNotBlank()) 1000 else timeout) else true
@@ -349,19 +427,20 @@ class ToolExecutor(
                 else -> "超时：前台应用不是 $pkg"
             },
             JSONObject().put("text_found", textOk).put("package_matched", pkgOk),
-            retryable = !ok
+            retryable = !ok,
+            failure = if (ok) null else FailureKind.UI_TIMEOUT
         )
     }
 
     private suspend fun findElement(args: JSONObject): ActionResult {
         val tree = AccessibilityBridge.snapshot()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val text = args.str("text")
         val resourceId = args.str("resourceId")
         val desc = args.str("desc")
         val clickableOnly = args.bool("clickable")
         if (text.isBlank() && resourceId.isBlank() && desc.isBlank()) {
-            return ActionResult(false, "find_element 需要 text/resourceId/desc 之一")
+            return ActionResult(false, "find_element 需要 text/resourceId/desc 之一", failure = FailureKind.INVALID_ARGS)
         }
         val matches = tree.nodes.filter { node ->
             (!clickableOnly || node.clickable) &&
@@ -375,13 +454,14 @@ class ToolExecutor(
             matches.isNotEmpty(),
             if (matches.isEmpty()) "未找到匹配控件" else "找到 ${matches.size} 个匹配控件",
             JSONObject().put("matches", array),
-            retryable = matches.isEmpty()
+            retryable = matches.isEmpty(),
+            failure = if (matches.isEmpty()) FailureKind.TARGET_NOT_FOUND else null
         )
     }
 
     private suspend fun verifyState(args: JSONObject): ActionResult {
         val tree = AccessibilityBridge.snapshot()
-            ?: return ActionResult(false, "无障碍服务未连接", retryable = true)
+            ?: return ActionResult(false, "无障碍服务未连接", retryable = true, failure = FailureKind.PERMISSION_DENIED)
         val text = args.str("text")
         val expectedPresent = args.bool("expect_present", true)
         val checkedText = args.str("checked_text")
@@ -398,9 +478,11 @@ class ToolExecutor(
             if (pkg.isNotBlank()) append("前台 ${tree.packageName}；")
         }.trim()
         return ActionResult(
-            ok, if (ok) "状态符合预期：$detail" else "状态不符合预期：$detail",
+            ok,
+            if (ok) "状态符合预期：$detail" else "状态不符合预期：$detail",
             JSONObject().put("text_found", textFound).put("checked", checkedOk)
-                .put("package", tree.packageName).put("foreground", AccessibilityBridge.foregroundPackage())
+                .put("package", tree.packageName).put("foreground", AccessibilityBridge.foregroundPackage()),
+            failure = if (ok) null else FailureKind.NO_UI_CHANGE
         )
     }
 
@@ -411,7 +493,8 @@ class ToolExecutor(
             allowed,
             if (allowed) "用户已允许：$reason" else "用户拒绝了：$reason",
             JSONObject().put("allowed", allowed),
-            retryable = false
+            retryable = false,
+            failure = if (allowed) null else FailureKind.HIGH_RISK_DENIED
         )
     }
 

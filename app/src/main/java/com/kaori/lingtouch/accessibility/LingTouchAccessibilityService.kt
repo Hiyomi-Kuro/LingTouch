@@ -279,26 +279,50 @@ class LingTouchAccessibilityService : AccessibilityService() {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
         if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-            return OpResult(true, "已输入 ${text.length} 个字符")
+            val readback = node.text?.toString().orEmpty()
+            val confirmed = readback.trim() == text.trim() || (text.isNotBlank() && readback.contains(text))
+            return OpResult(
+                true,
+                if (confirmed) "已输入 ${text.length} 个字符（已回读校验）" else "已提交输入 ${text.length} 个字符，但未能回读内容",
+                changed = confirmed,
+                readback = readback
+            )
         }
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         clipboard?.setPrimaryClip(ClipData.newPlainText("lingtouch", text))
         val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-        return OpResult(pasted, if (pasted) "已通过粘贴输入 ${text.length} 个字符" else "输入失败")
+        val readback = if (pasted) node.text?.toString().orEmpty() else ""
+        val confirmed = pasted && (readback.trim() == text.trim() || (text.isNotBlank() && readback.contains(text)))
+        return OpResult(
+            pasted,
+            if (pasted) "已通过粘贴输入 ${text.length} 个字符" else "输入失败",
+            changed = confirmed,
+            readback = readback
+        )
     }
+
 
     fun scroll(direction: String, matcher: NodeMatcher? = null): OpResult {
         val target = matcher?.let { findNode(it) } ?: findScrollableNode()
         if (target == null) return OpResult(false, "当前界面没有可滚动区域")
-        val action = when (direction.lowercase()) {
-            "up", "back", "backward", "down" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-            "left" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.id
-            "right" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id
-            else -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+        val before = snapshot()?.signature().orEmpty()
+        val action = when (ScrollSemantics.resolve(direction)) {
+            ScrollAxis.BACKWARD -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            ScrollAxis.FORWARD -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            ScrollAxis.LEFT -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.id
+            ScrollAxis.RIGHT -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id
         }
         val ok = target.performAction(action)
-        return OpResult(ok, if (ok) "已滚动 $direction" else "滚动失败")
+        val changed = ok && signatureChanged(before)
+        val message = if (ok) {
+            "已滚动 $direction（${ScrollSemantics.describe(direction)}）" +
+                if (changed) "，界面已变化" else "，界面未变化"
+        } else {
+            "滚动失败：${ScrollSemantics.describe(direction)}"
+        }
+        return OpResult(ok, message, changed)
     }
+
 
     private fun findScrollableNode(): AccessibilityNodeInfo? {
         var result: AccessibilityNodeInfo? = null

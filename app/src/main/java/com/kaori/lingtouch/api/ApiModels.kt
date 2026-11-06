@@ -23,7 +23,10 @@ data class ChatOutput(
     val promptTokens: Int = 0,
     val completionTokens: Int = 0,
     val latencyMs: Long = 0,
-    val raw: String = ""
+    val raw: String = "",
+    val finishReason: String = "",
+    val reasoningChars: Int = 0,
+    val reasoning: String = ""
 )
 
 enum class ApiErrorKind {

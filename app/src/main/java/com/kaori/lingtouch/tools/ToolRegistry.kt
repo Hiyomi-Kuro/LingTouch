@@ -49,9 +49,9 @@ object ToolRegistry {
         ),
         ToolSpec("get_screen_text", "提取当前界面所有可访问文字", emptyList(), Risk.LOW, "observe"),
         ToolSpec("capture_screen", "截取当前屏幕（保存到任务私有缓存）", emptyList(), Risk.LOW, "vision"),
-        ToolSpec("run_ocr", "对当前屏幕执行端侧 OCR，返回文字与坐标", emptyList(), Risk.LOW, "vision"),
+        ToolSpec("run_ocr", "对当前屏幕执行端侧 OCR，返回文字、bounds 与屏幕坐标 center（可直接作为 tap 的 x/y）", emptyList(), Risk.LOW, "vision"),
         ToolSpec(
-            "tap", "点击控件。优先使用 nodeId/text/resourceId；坐标点击是最后手段",
+            "tap", "点击控件。优先 nodeId/text/resourceId；图标、游戏、Unity、无文字画布用 OCR center 或截图坐标 x/y",
             listOf(int("nodeId", desc = "get_ui_tree 返回的 index", min = 0), str("text", desc = "控件文字"), str("resourceId", desc = "资源 ID（可省略包名前缀）"), str("desc", desc = "内容描述"), int("x", desc = "屏幕 x 坐标", min = 0), int("y", desc = "屏幕 y 坐标", min = 0)),
             Risk.LOW, "act"
         ),
@@ -66,7 +66,7 @@ object ToolRegistry {
             Risk.LOW, "act"
         ),
         ToolSpec(
-            "scroll", "滚动当前可滚动区域",
+            "scroll", "滚动当前可滚动区域。up=查看更早内容，down=查看更多内容",
             listOf(enum("direction", listOf("up", "down", "left", "right")), int("nodeId", desc = "指定滚动容器", min = 0)),
             Risk.LOW, "act"
         ),
@@ -99,8 +99,17 @@ object ToolRegistry {
             Risk.LOW, "control"
         ),
         ToolSpec(
-            "finish_task", "任务目标已达成时结束任务",
-            listOf(str("summary", true, "给用户的最终结果"), str("evidence", desc = "支持完成结论的界面证据"), str("expect_text", desc = "完成时应存在的文字"), str("expect_package", desc = "完成时应处于前台的应用")),
+            "finish_task",
+            "任务目标已达成时结束任务。必须提供可被本地独立校验的完成条件，模型自述的 evidence 不算证据",
+            listOf(
+                str("summary", true, "给用户的最终结果"),
+                str("evidence", desc = "模型自述的完成依据，仅作说明，不作为系统证据"),
+                str("expect_text", desc = "完成时应存在于界面的文字"),
+                str("expect_package", desc = "完成时应处于前台的应用包名"),
+                str("expect_activity", desc = "完成时应处于的 Activity"),
+                str("expect_checked", desc = "完成时应处于选中状态的开关/选项文字"),
+                bool("expect_text_absent", desc = "true 表示 expect_text 应已从界面消失")
+            ),
             Risk.LOW, "control"
         ),
         ToolSpec(

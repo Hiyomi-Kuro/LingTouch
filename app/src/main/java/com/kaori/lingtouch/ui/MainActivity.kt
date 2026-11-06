@@ -192,10 +192,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun onAgentState(state: com.kaori.lingtouch.agent.AgentUiState) {
         if (state.isActive) activeTaskId = state.taskId
-        if (state.status != AgentStatus.COMPLETED && state.status != AgentStatus.FAILED) return
+        if (state.status != AgentStatus.SUCCEEDED && state.status != AgentStatus.FAILED) return
         if (state.taskId <= 0) return
         if (state.taskId != activeTaskId && state.taskId != pendingResultTaskId) return
         activeTaskId = -1L
+        if (home.handlesAgentTask(state.taskId)) {
+            activeTaskId = -1L
+            pendingResultTaskId = -1L
+            return
+        }
         pendingResultTaskId = -1L
         showResultDialog(state.taskId, state.status, state.result.ifBlank { state.error.orEmpty() })
     }
@@ -228,9 +233,14 @@ class MainActivity : AppCompatActivity() {
     private fun showPendingResult() {
         val id = pendingResultTaskId
         if (id <= 0) return
+        if (home.handlesAgentTask(id)) {
+            pendingResultTaskId = -1L
+            return
+        }
+        if (id <= 0) return
         val state = app.agent.state.value
         if (state.taskId == id &&
-            (state.status == AgentStatus.COMPLETED || state.status == AgentStatus.FAILED)
+            (state.status == AgentStatus.SUCCEEDED || state.status == AgentStatus.FAILED)
         ) {
             pendingResultTaskId = -1L
             showResultDialog(id, state.status, state.result.ifBlank { state.error.orEmpty() })
@@ -240,7 +250,7 @@ class MainActivity : AppCompatActivity() {
             val task = withContext(Dispatchers.IO) { app.db.task(id) }
             pendingResultTaskId = -1L
             if (task != null) {
-                val status = if (task.status == "SUCCESS") AgentStatus.COMPLETED else AgentStatus.FAILED
+                val status = if (task.status == "SUCCESS") AgentStatus.SUCCEEDED else AgentStatus.FAILED
                 showResultDialog(id, status, task.summary.orEmpty())
             }
         }
@@ -250,7 +260,7 @@ class MainActivity : AppCompatActivity() {
         if (shownResultTaskId == taskId) return
         shownResultTaskId = taskId
         val title = when (status) {
-            AgentStatus.COMPLETED -> R.string.task_done
+            AgentStatus.SUCCEEDED -> R.string.task_done
             AgentStatus.FAILED -> R.string.task_failed
             else -> R.string.task_cancelled
         }

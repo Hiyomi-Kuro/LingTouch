@@ -7,14 +7,32 @@
 - 最低系统：Android 11（API 30）
 - 目标 / 编译 SDK：34 / 36
 - 形态：Kotlin + XML 视图 + Material 3 + 单 `app` 模块分包架构
+- 版本：1.0（versionCode 1，对外版本保持不变）
 - 产物：`app/build/outputs/apk/debug/app-debug.apk`（根目录另有副本 `app-debug.apk`）
+- 应用图标：由项目根目录 `icon.png` 生成各密度 PNG、圆形图标与自适应图标（`ic_launcher_full`）
+
+## 0. 对话式首页（本次更新）
+
+首页已改为类似 opencode 的对话界面：
+
+- 顶部切换 **操控 / 对话 / 工作** 三种模式；三种模式各自保存历史与可编辑记忆。
+- 模型 chip：可选「默认」（跟随设置中的默认模型）、OpenCode Go 实时 `/v1/models` 列表，或手动输入模型 ID；每个会话记住自己的选择。
+- 工作目录 chip：通过系统 SAF 选择目录并持久授权；工作模式的所有读写都被限制在该目录内，`..` 会被拒绝。
+- `@` 引用：工作模式引用文件内容（文本或 base64 二进制），操控模式引用应用，对话模式引用记忆。
+- 消息区流式显示回答与完整 `reasoning_content` 思考过程（可折叠）；长按消息可复制。
+- 历史按模式列出，可打开或删除；删除会话会级联删除消息。
+- 导出当前会话为 Markdown，包含完整思考过程、工具步骤与模式记忆；任务详情页也可单独导出。
+- 每个模式有一份可编辑的长期记忆，保存在 `mode_memory` 表并注入该模式的 system prompt。
+- 操控模式每步自动截图并执行端侧 OCR，OCR 行返回 `bounds` 与屏幕坐标 `center`；视觉模型会附带截图。Unity/游戏/画布等无可读文字的界面，模型可直接用 OCR center 或截图坐标 `tap x/y` 定位按钮。
+
+> 升级说明：首次启动新版会将「允许向模型发送截图」默认开启一次，以便操控模式能使用截图 + OCR 定位图标；可在设置中随时关闭。截图只在模型被模型目录标记为视觉模型（或设置了视觉模型）时才会附加，OCR 始终在端侧完成。
 
 ## 1. 已实现能力
 
 | 模块 | 实现 |
 | --- | --- |
-| AI 闭环 | Observe → Plan → Act → Verify → Reflect → Continue，单步动作、严格 JSON Schema 校验、重试 / 超时；执行步数不设上限；连续 3 次相同动作时弹出应用主页面询问继续或停止 |
-| OpenCode Go API | 真实 HTTPS 调用；OpenAI Chat Completions / OpenAI Responses / Anthropic Messages / Gemini 四种协议；Bearer / x-api-key 认证；429、5xx 自动退避重试；401/403/404/400 分类错误提示 |
+| AI 闭环 | Goal → Decompose → Observe → Select Strategy → Act → Verify → Recover/Reflect → Complete；单步动作、严格 JSON Schema 校验、任务计划与终态校验、失败分类与循环保护；执行步数不设上限 |
+| OpenCode Go API | 真实 HTTPS 调用；OpenAI Chat Completions / OpenAI Responses / Anthropic Messages / Gemini 四种协议；Bearer / x-api-key 认证；429、5xx 自动退避重试；401/403/404/400 分类错误提示；兼容 reasoning_content、SSE 与多协议返回，空响应自动提升 token 并给出结构诊断 |
 | 模型目录 | 动态请求 `/v1/models`、本地缓存、搜索、切换默认 / 视觉模型、手动输入模型 ID、视觉能力识别、连接测试 |
 | 密钥安全 | Android Keystore AES/GCM 加密后存入应用私有 SharedPreferences，不落日志、不导出 |
 | Shizuku | 安装 / 运行 / 授权 / Binder 断开检测、授权请求、UserService 以 shell（uid 2000）或 root（uid 0）执行**白名单**系统命令（pm / am / dumpsys / settings），能力探测 |
@@ -22,19 +40,30 @@
 | 截图 | 无障碍 `takeScreenshot` 优先，MediaProjection 前台服务兜底（用户显式授权） |
 | OCR | ML Kit 端侧中文模型（同时识别英文），返回文本与坐标；完全离线 |
 | 应用管理 | 扫描第三方与系统应用（`QUERY_ALL_PACKAGES`，仅本地使用）、图标、版本、Activity / 导出状态、按名称或包名搜索、启动应用 / Activity、安装卸载监听 |
-| 记忆 | SQLite 五张表（apps / tasks / task_steps / memories / experiences），应用记忆、任务记忆、通用经验；自动学习、可信度、使用次数、手动增删改、按应用 / 类型 / 关键字检索、JSON 导出导入 |
-| 悬浮窗 | 可拖动纯色悬浮球（无文字）+ 控制面板：打开应用、暂停 / 继续、停止、收起；状态颜色随任务变化 |
+| 记忆 | SQLite 五张表（apps / tasks / task_steps / memories / experiences）；自动学习、可信度、使用次数、应用版本与界面签名、错误类型与恢复方法、手动增删改、按应用 / 类型 / 关键字检索、JSON 导出导入；写入与导出统一脱敏 |
+| 悬浮窗 | 可拖动纯色悬浮球（无文字）＋只读状态面板；不提供任何悬浮窗按钮，暂停 / 继续 / 停止统一在任务页操作 |
 | 清理 | 每任务独立缓存目录，成功 / 失败 / 取消 / 超时 / 异常统一清理；设置项默认开启；立即清理缓存 |
 | 权限 | 首次启动权限向导，各项独立授权；拒绝非核心权限不崩溃 |
 
-## 1.1 当前实测状态
+## 1.1 当前构建与验证状态
 
-- 构建：`:app:assembleDebug` 与 `:app:testDebugUnitTest` 通过，27 项单元测试全部通过。
-- 真机（vivo V2309A / Android 14）：安装、启动、首页 / 应用 / 记忆 / 设置四个页签、无障碍连接、Shizuku（uid 2000）、悬浮窗、OpenAI 兼容请求（本地 mock）均已实测；应用列表实测 725 个。
-- Agent 闭环已跑通“观察 → 模型 → 工具 → 数据库 → 记忆”，但尚未完成一次成功任务；测试时应用清单未加载完成的竞态已修复。
-- 未实机验证：OCR、MediaProjection、记忆编辑 / 导入导出、高风险确认、停止 / 暂停。
-- 某些安装状态下该 vivo ROM 会过滤 `QUERY_ALL_PACKAGES`（曾只返回 1 个应用），已用 `<queries>` 启动器 Activity 回退；最终安装实测可见 725 个应用。
+- 构建：`:app:assembleDebug` 与 `:app:testDebugUnitTest` 通过（BUILD SUCCESSFUL，退出码 0），114 项单元测试全部通过。
+- 产物：`app/build/outputs/apk/debug/app-debug.apk`，包名 `com.kaori.lingtouch`，versionName `1.0`，versionCode `1`，大小与 SHA-256 见 `TEST_REPORT.md`。
+- 本次未做实机安装、真实 API 调用与跨应用执行测试；这些由用户本人完成（见文末清单）。
+- 历史实测（上一版本）：安装、四页签、无障碍、Shizuku、悬浮窗、本地 mock API 均已验证；应用列表 725 个。
 - 完整记录见 `TEST_REPORT.md`。
+
+## 1.2 自主执行引擎（本次增强）
+
+- 计划：`Goal → Decompose → Observe → Select Strategy → Act → Verify → Recover/Reflect → Complete`；`TaskPlan/SubGoal` 支持 PENDING / RUNNING / SUCCEEDED / FAILED / BLOCKED / SKIPPED，简单任务单步执行，复杂任务可附加 `plan` 并随时重规划。
+- 观察：`ScreenState`（前台包名、Activity、尺寸 / 旋转、界面签名、关键文字、弹窗 / 键盘 / 可输入 / 可滚动）每步重建，禁止复用旧节点索引或坐标。
+- 校验：`Verifier` 独立读取真实 UI 校验完成条件；`finish_task` 的 `evidence` 只作说明，无法校验时要求用户确认或拒绝结束（`CompletionGate`）。
+- 提交状态：DISPATCHED / OBSERVED_CHANGED / VERIFIED_SUCCESS / UNCHANGED / FAILED / UNKNOWN 分别记录。
+- 恢复：结构化错误（TARGET_NOT_FOUND、STALE_NODE、NO_UI_CHANGE、UI_TIMEOUT、APP_NOT_FOREGROUND、PERMISSION_DENIED、VISION_UNAVAILABLE、MODEL_FORMAT_ERROR、NETWORK_ERROR、RATE_LIMIT、LOOP_DETECTED、INVALID_ARGS、HIGH_RISK_DENIED 等）对应等待 / 重观察 / 换定位 / 重新规划 / 询问用户 / 中止。
+- 循环保护：连续相同动作、界面长期不变、页面来回切换三类检测；首次要求改变策略，再次询问用户，避免无限消耗额度。
+- 成本与上下文：API 请求超时可配，单步工具超时可配；记录真实 usage Token 与压缩后的估算 Token；分层压缩上下文（约束、计划、最近步骤、错误、界面），压缩不会丢失用户禁止事项。
+- 记忆：经验记录应用版本与界面签名，版本变化时下调权重并提示重新确认；记录错误类型与恢复方法；写入 / 导出前统一脱敏（密码、验证码、Token、输入文本）。
+- 悬浮窗：仅保留可拖动状态球与只读状态面板，悬浮窗按钮已删除；暂停 / 继续 / 停止统一在任务页操作。
 
 ## 2. 构建
 
@@ -81,6 +110,8 @@ User-Agent: LingTouch/1.0 (Android AI agent)
 模型列表：`GET https://opencode.ai/inference/go/v1/models`。
 
 > 模型 ID 与可用性会随官方调整；应用不写死模型列表，始终以实时接口为准。部分模型有地区限制（如 DeepSeek 需在 OpenCode 隐私设置中选择 Global）。
+
+> 若「测试连接」提示“模型返回为空（HTTP 200）”：应用已兼容推理模型（`reasoning_content`）、SSE 流与 Anthropic/Responses 兼容返回，并在输出被截断时自动提升 token 上限重试；错误信息会附带 `finish_reason` 与响应字段名。DeepSeek 仍受地区限制，需在 OpenCode Console → Settings → Privacy → Regions 选择 Global。
 
 ## 5. 权限说明
 
@@ -175,7 +206,7 @@ com.kaori.lingtouch
 - 未实现原生函数调用（function calling），统一使用 JSON 动作协议以兼容更多模型。
 - 未做 Release 签名与混淆；当前交付 Debug APK。
 - 已取消最大执行步骤数：任务只会在完成、失败、API 错误、你手动停止或重复操作确认时结束；长时间任务会持续消耗 API 额度，请随时停止。
-- APK SHA-256：`abfe310cad983c82f490ada9abce8620a2c00be528a08a2afff2c94df6c28e98`。
+- APK SHA-256：`371b6610d3e1fa106e28593652c1e813d8f0bc9badc24cd74ea5f46f0dfa8cfd`。
 - 不同厂商 ROM 的权限与无障碍实现差异会影响个别控件；若 ROM 过滤 `QUERY_ALL_PACKAGES`，应用列表会自动使用启动器 Activity 回退。
 - 应用不会修改或关闭用户已有的其他无障碍服务；灵触的无障碍服务需用户在系统设置中手动启用。
 - 英文界面覆盖主要静态文案，部分动态提示仍为中文。

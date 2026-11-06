@@ -9,15 +9,19 @@ data class AppSettings(
     val model: String = DEFAULT_MODEL,
     val visionModel: String = "",
     val timeoutSeconds: Int = 120,
+    val toolTimeoutSeconds: Int = 45,
     val maxSteps: Int = 0, // legacy field; execution is no longer capped
     val maxRetries: Int = 2,
-    val sendScreenshots: Boolean = false,
+    val sendScreenshots: Boolean = true,
     val ocrEnabled: Boolean = true,
     val autoCleanup: Boolean = true,
     val overlayEnabled: Boolean = true,
     val overlayX: Int = -1,
     val overlayY: Int = -1,
     val guideDone: Boolean = false,
+    val workUri: String = "",
+    val workName: String = "",
+    val lastMode: String = "CHAT",
     val lastTaskId: Long = -1L
 ) {
     val hasVision: Boolean get() = visionModel.isNotBlank()
@@ -36,5 +40,6 @@ data class AppSettings(
         fun clampSteps(value: Int): Int = value.coerceIn(0, 500)
         fun clampRetries(value: Int): Int = value.coerceIn(0, 6)
         fun clampTimeout(value: Int): Int = value.coerceIn(15, 600)
+        fun clampToolTimeout(value: Int): Int = value.coerceIn(5, 180)
     }
 }

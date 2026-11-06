@@ -31,8 +31,10 @@ data class NodeMatcher(
     }
 }
 
+/** Result of one accessibility operation, including whether the target state was read back. */
 data class OpResult(
     val success: Boolean,
     val message: String,
-    val changed: Boolean = false
+    val changed: Boolean = false,
+    val readback: String = ""
 )

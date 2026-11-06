@@ -96,6 +96,10 @@ class LingTouchDb(context: Context) : SQLiteOpenHelper(context.applicationContex
                 confidence REAL NOT NULL DEFAULT 0.5,
                 success_count INTEGER NOT NULL DEFAULT 0,
                 fail_count INTEGER NOT NULL DEFAULT 0,
+                error_type TEXT,
+                recovery TEXT,
+                ui_signature TEXT,
+                app_version TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
@@ -106,14 +110,85 @@ class LingTouchDb(context: Context) : SQLiteOpenHelper(context.applicationContex
         db.execSQL("CREATE INDEX idx_mem_updated ON memories(updated_at)")
         db.execSQL("CREATE INDEX idx_exp_pkg ON experiences(package_name)")
         db.execSQL("CREATE INDEX idx_tasks_started ON tasks(started_at)")
+        createChatTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Migration policy: every future version adds an explicit, additive migration here.
-        // Never drop user memories as part of an upgrade.
+        // Additive migrations only: never drop user memories, tasks or configuration.
         var version = oldVersion
         if (version < 2) {
+            addColumnIfMissing(db, "experiences", "error_type", "TEXT")
+            addColumnIfMissing(db, "experiences", "recovery", "TEXT")
+            addColumnIfMissing(db, "experiences", "ui_signature", "TEXT")
+            addColumnIfMissing(db, "experiences", "app_version", "TEXT")
             version = 2
+        }
+        if (version < 3) {
+            createChatTables(db)
+            version = 3
+        }
+    }
+
+    private fun createChatTables(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS chat_sessions(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mode TEXT NOT NULL,
+                title TEXT NOT NULL,
+                model TEXT NOT NULL DEFAULT '',
+                work_uri TEXT NOT NULL DEFAULT '',
+                work_name TEXT NOT NULL DEFAULT '',
+                task_id INTEGER NOT NULL DEFAULT -1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS chat_messages(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                reasoning TEXT NOT NULL DEFAULT '',
+                meta TEXT,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS mode_memory(
+                mode TEXT PRIMARY KEY,
+                content TEXT NOT NULL DEFAULT '',
+                updated_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_sessions(mode, updated_at)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_chat_msg ON chat_messages(session_id, id)")
+    }
+
+    private fun addColumnIfMissing(db: SQLiteDatabase, table: String, column: String, type: String) {
+        val exists = runCatching {
+            db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                var found = false
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0 && cursor.getString(nameIndex) == column) {
+                        found = true
+                        break
+                    }
+                }
+                found
+            }
+        }.getOrDefault(false)
+        if (!exists) {
+            runCatching { db.execSQL("ALTER TABLE $table ADD COLUMN $column $type") }
+                .onFailure { Logx.w("Db", "迁移失败 $table.$column: ${it.message}") }
         }
     }
 
@@ -333,6 +408,10 @@ class LingTouchDb(context: Context) : SQLiteOpenHelper(context.applicationContex
             put("confidence", exp.confidence)
             put("success_count", exp.successCount)
             put("fail_count", exp.failCount)
+            put("error_type", exp.errorType)
+            put("recovery", exp.recovery)
+            put("ui_signature", exp.uiSignature)
+            put("app_version", exp.appVersion)
             put("created_at", exp.createdAt)
             put("updated_at", exp.updatedAt)
         }
@@ -368,6 +447,19 @@ class LingTouchDb(context: Context) : SQLiteOpenHelper(context.applicationContex
             "UPDATE experiences SET $column=$column+1, updated_at=? WHERE id=?",
             arrayOf(System.currentTimeMillis(), id)
         )
+    }
+
+    fun failureLessons(packageName: String?, limit: Int = 2): List<ExperienceEntity> {
+        val clauses = mutableListOf("verified=0", "error_type IS NOT NULL")
+        val args = mutableListOf<String>()
+        if (!packageName.isNullOrBlank()) {
+            clauses.add("(package_name IS NULL OR package_name=?)")
+            args.add(packageName)
+        }
+        return readableDatabase.query(
+            "experiences", null, clauses.joinToString(" AND "), args.toTypedArray(), null, null,
+            "updated_at DESC", limit.toString()
+        ).use { c -> buildList { while (c.moveToNext()) add(c.toExperience()) } }
     }
 
     // --------------------------------------------------------------- mapping
@@ -434,6 +526,10 @@ class LingTouchDb(context: Context) : SQLiteOpenHelper(context.applicationContex
         confidence = getDouble(getColumnIndexOrThrow("confidence")).toFloat(),
         successCount = int("success_count"),
         failCount = int("fail_count"),
+        errorType = optString("error_type"),
+        recovery = optString("recovery"),
+        uiSignature = optString("ui_signature"),
+        appVersion = optString("app_version"),
         createdAt = long("created_at"),
         updatedAt = long("updated_at")
     )
@@ -451,6 +547,6 @@ class LingTouchDb(context: Context) : SQLiteOpenHelper(context.applicationContex
 
     companion object {
         const val NAME = "lingtouch.db"
-        const val VERSION = 1
+        const val VERSION = 3
     }
 }

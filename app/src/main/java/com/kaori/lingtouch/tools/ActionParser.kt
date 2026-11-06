@@ -1,6 +1,7 @@
 package com.kaori.lingtouch.tools
 
 import com.kaori.lingtouch.util.Json
+import org.json.JSONArray
 import org.json.JSONObject
 
 object ActionParser {
@@ -28,9 +29,18 @@ object ActionParser {
             args = args,
             thought = holder.optString("thought").take(600),
             expect = firstNonBlank(holder.optString("expect"), holder.optString("expected")),
-            declaredRisk = Risk.from(holder.optString("risk"))
+            declaredRisk = Risk.from(holder.optString("risk")),
+            plan = planArray(holder)
         )
     }
+
+    private fun planArray(holder: JSONObject): JSONArray? =
+        holder.optJSONArray("plan")
+            ?: holder.optJSONArray("subgoals")
+            ?: holder.optJSONArray("task_plan")
+            ?: holder.optJSONObject("plan")?.let {
+                it.optJSONArray("subgoals") ?: it.optJSONArray("steps")
+            }
 
     private fun unwrap(root: JSONObject): JSONObject {
         listOf("step", "action_object", "output", "result").forEach { key ->

@@ -1,19 +1,22 @@
 package com.kaori.lingtouch.memory
 
+import com.kaori.lingtouch.security.Redactor
 import com.kaori.lingtouch.util.Json
+import com.kaori.lingtouch.util.Json.parseObject
 import com.kaori.lingtouch.util.bool
 import com.kaori.lingtouch.util.int
-import com.kaori.lingtouch.util.Json.parseObject
 import com.kaori.lingtouch.util.str
 import com.kaori.lingtouch.util.Logx
 import org.json.JSONArray
 import org.json.JSONObject
 
 data class MemoryContext(
-    val memories: List<MemoryEntity>,
-    val experiences: List<ExperienceEntity>
+    val memories: List<MemoryEntity> = emptyList(),
+    val experiences: List<ExperienceEntity> = emptyList(),
+    val lessons: List<ExperienceEntity> = emptyList(),
+    val appVersion: String? = null
 ) {
-    val isEmpty: Boolean get() = memories.isEmpty() && experiences.isEmpty()
+    val isEmpty: Boolean get() = memories.isEmpty() && experiences.isEmpty() && lessons.isEmpty()
 
     fun toPromptText(): String {
         if (isEmpty) return ""
@@ -34,16 +37,33 @@ data class MemoryContext(
         if (experiences.isNotEmpty()) {
             sb.appendLine("【可复用经验】")
             experiences.forEach { e ->
-                sb.appendLine("- 触发「${e.trigger.take(60)}」→ 方法：${e.method.take(240)}（成功${e.successCount}次）")
+                sb.appendLine(
+                    "- 触发「${e.trigger.take(60)}」→ 方法：${e.method.take(240)}" +
+                        "（成功${e.successCount}次，置信度 ${"%.2f".format(e.confidence)}${versionWarning(e)}）"
+                )
+            }
+        }
+        if (lessons.isNotEmpty()) {
+            sb.appendLine("【应避免的做法】")
+            lessons.forEach { e ->
+                sb.appendLine(
+                    "- 错误 ${e.errorType ?: "未知"}：${e.trigger.take(60)}；恢复建议：${(e.recovery ?: "无记录").take(160)}"
+                )
             }
         }
         return sb.toString().trim()
+    }
+
+    private fun versionWarning(exp: ExperienceEntity): String {
+        val stored = exp.appVersion?.takeIf { it.isNotBlank() } ?: return ""
+        val current = appVersion?.takeIf { it.isNotBlank() } ?: return ""
+        return if (stored != current) "，应用版本已从 $stored 变为 $current，旧定位可能失效，必须重新确认界面" else ""
     }
 }
 
 /**
  * Turns completed task traces into durable, editable knowledge, and retrieves the
- * most relevant lessons for a new goal. User-entered text is never persisted here.
+ * most relevant lessons for a new goal. Persisted text goes through [Redactor].
  */
 class MemoryRepository(private val db: LingTouchDb) {
 
@@ -52,7 +72,12 @@ class MemoryRepository(private val db: LingTouchDb) {
         goal: String,
         steps: List<TaskStepEntity>,
         success: Boolean,
-        summary: String?
+        summary: String?,
+        planText: String? = null,
+        failureKind: String? = null,
+        recoveryHint: String? = null,
+        appVersion: String? = null,
+        screenSignature: String? = null
     ): Int {
         if (steps.isEmpty()) return 0
         var inserted = 0
@@ -65,8 +90,10 @@ class MemoryRepository(private val db: LingTouchDb) {
         val taskTitle = "任务：${goal.take(70)}"
         val taskContent = buildString {
             appendLine("结果：$resultWord")
+            if (!planText.isNullOrBlank()) appendLine("计划：${Redactor.redactText(planText).take(300)}")
+            if (!failureKind.isNullOrBlank()) appendLine("失败类型：$failureKind")
             if (safeSteps.isNotEmpty()) appendLine("执行路径：$chain")
-            if (!summary.isNullOrBlank()) appendLine("总结：${summary.take(300)}")
+            if (!summary.isNullOrBlank()) appendLine("总结：${Redactor.redactText(summary).take(300)}")
         }.trim()
         upsert(
             MemoryEntity(
@@ -89,7 +116,8 @@ class MemoryRepository(private val db: LingTouchDb) {
                     packageName = packageName,
                     appLabel = label,
                     title = "${label ?: packageName} 操作经验：${goal.take(50)}",
-                    content = "目标：${goal.take(120)}\n成功路径：$chain",
+                    content = "目标：${goal.take(120)}\n成功路径：$chain" +
+                        (appVersion?.let { "\n应用版本：$it" } ?: ""),
                     verified = true,
                     successCount = 1
                 )
@@ -98,18 +126,27 @@ class MemoryRepository(private val db: LingTouchDb) {
         }
 
         if (success && steps.size >= 2) {
-            recordExperience(packageName, goal, safeSteps, chain)
+            recordExperience(packageName, goal, safeSteps, chain, appVersion, screenSignature)
+            inserted++
+        }
+
+        if (!success && !failureKind.isNullOrBlank()) {
+            recordFailureExperience(
+                packageName, goal, failureKind, recoveryHint, appVersion, screenSignature, summary
+            )
             inserted++
         }
         Logx.d("Memory", "任务 $taskId 学习完成，写入 $inserted 条记忆")
         return inserted
     }
 
-    fun contextFor(goal: String, packageName: String?): MemoryContext {
+    fun contextFor(goal: String, packageName: String?, appVersion: String? = null): MemoryContext {
         val keys = keywords(goal)
         val memories = db.relevantMemories(keys, packageName, 6)
         val experiences = db.relevantExperiences(packageName, keys, 3)
-        return MemoryContext(memories, experiences)
+            .sortedByDescending { effectiveConfidence(it, appVersion) }
+        val lessons = runCatching { db.failureLessons(packageName, 2) }.getOrDefault(emptyList())
+        return MemoryContext(memories, experiences, lessons, appVersion)
     }
 
     fun recordUsage(context: MemoryContext, success: Boolean) {
@@ -141,6 +178,13 @@ class MemoryRepository(private val db: LingTouchDb) {
 
     // ------------------------------------------------------------ internals
 
+    private fun effectiveConfidence(exp: ExperienceEntity, currentVersion: String?): Float {
+        val base = exp.confidence
+        val stored = exp.appVersion?.takeIf { it.isNotBlank() }
+        val current = currentVersion?.takeIf { it.isNotBlank() }
+        return if (stored != null && current != null && stored != current) base - 0.15f else base
+    }
+
     private fun upsert(memory: MemoryEntity): Long {
         val existing = db.memories(memory.type, memory.title.take(40))
             .firstOrNull { it.title == memory.title && it.packageName == memory.packageName }
@@ -160,17 +204,26 @@ class MemoryRepository(private val db: LingTouchDb) {
         }
     }
 
-    private fun recordExperience(packageName: String?, goal: String, actions: List<Pair<String, JSONObject>>, chain: String) {
+    private fun recordExperience(
+        packageName: String?,
+        goal: String,
+        actions: List<Pair<String, JSONObject>>,
+        chain: String,
+        appVersion: String?,
+        screenSignature: String?
+    ) {
         val existing = db.allExperiences().firstOrNull {
-            it.packageName == packageName && it.trigger == goal.take(120)
+            it.packageName == packageName && it.trigger == goal.take(120) && it.errorType == null
         }
         val stepsJson = JSONArray().apply {
             actions.forEach { (action, args) -> put(JSONObject().put("action", action).put("args", args)) }
         }.toString()
         if (existing != null) {
             db.writableDatabase.execSQL(
-                "UPDATE experiences SET method=?, steps_json=?, verified=1, confidence=MIN(0.95, confidence+0.1), success_count=success_count+1, updated_at=? WHERE id=?",
-                arrayOf(chain, stepsJson, System.currentTimeMillis(), existing.id)
+                "UPDATE experiences SET method=?, steps_json=?, verified=1, " +
+                    "confidence=MIN(0.95, confidence+0.1), success_count=success_count+1, " +
+                    "app_version=?, ui_signature=?, updated_at=? WHERE id=?",
+                arrayOf(chain, stepsJson, appVersion, screenSignature, System.currentTimeMillis(), existing.id)
             )
         } else {
             db.insertExperience(
@@ -182,7 +235,46 @@ class MemoryRepository(private val db: LingTouchDb) {
                     stepsJson = stepsJson,
                     verified = true,
                     confidence = 0.6f,
-                    successCount = 1
+                    successCount = 1,
+                    uiSignature = screenSignature,
+                    appVersion = appVersion
+                )
+            )
+        }
+    }
+
+    private fun recordFailureExperience(
+        packageName: String?,
+        goal: String,
+        failureKind: String,
+        recoveryHint: String?,
+        appVersion: String?,
+        screenSignature: String?,
+        summary: String?
+    ) {
+        val trigger = goal.take(120)
+        val existing = db.allExperiences().firstOrNull {
+            it.packageName == packageName && it.trigger == trigger && it.errorType == failureKind
+        }
+        if (existing != null) {
+            db.writableDatabase.execSQL(
+                "UPDATE experiences SET fail_count=fail_count+1, recovery=?, updated_at=? WHERE id=?",
+                arrayOf(recoveryHint ?: existing.recovery, System.currentTimeMillis(), existing.id)
+            )
+        } else {
+            db.insertExperience(
+                ExperienceEntity(
+                    packageName = packageName,
+                    taskType = category(goal),
+                    trigger = trigger,
+                    method = "失败信息：${(summary ?: "无摘要").take(160)}",
+                    verified = false,
+                    confidence = 0.3f,
+                    failCount = 1,
+                    errorType = failureKind,
+                    recovery = recoveryHint,
+                    uiSignature = screenSignature,
+                    appVersion = appVersion
                 )
             )
         }
@@ -193,14 +285,15 @@ class MemoryRepository(private val db: LingTouchDb) {
         val args = Json.parseObject(step.argsJson) ?: JSONObject()
         val safe = JSONObject()
         listOf("package", "activity", "resourceId", "class", "direction", "nodeId").forEach { key ->
-            if (args.has(key)) safe.put(key, args.optString(key).take(80))
+            if (args.has(key)) safe.put(key, Redactor.redactText(args.optString(key).take(80)))
         }
         if (args.has("text") && step.action !in setOf("input_text")) {
-            safe.put("text", args.optString("text").take(30))
+            safe.put("text", Redactor.redactText(args.optString("text")).take(30))
         }
-        if (args.has("query")) safe.put("query", args.optString("query").take(30))
+        if (args.has("query")) safe.put("query", Redactor.redactText(args.optString("query")).take(30))
         val label = when {
-            step.action == "tap" && args.has("text") -> "tap(\"${args.optString("text").take(16)}\")"
+            step.action == "tap" && args.has("text") ->
+                "tap(\"${Redactor.redactText(args.optString("text")).take(16)}\")"
             args.has("resourceId") -> "${step.action}(${args.optString("resourceId").takeLast(30)})"
             args.has("package") -> "${step.action}(${args.optString("package")})"
             else -> step.action
@@ -247,8 +340,8 @@ class MemoryRepository(private val db: LingTouchDb) {
                     .put("type", m.type.name)
                     .put("package", m.packageName)
                     .put("appLabel", m.appLabel)
-                    .put("title", m.title)
-                    .put("content", m.content)
+                    .put("title", Redactor.redactText(m.title))
+                    .put("content", Redactor.redactText(m.content))
                     .put("verified", m.verified)
                     .put("useCount", m.useCount)
                     .put("successCount", m.successCount)
@@ -261,17 +354,21 @@ class MemoryRepository(private val db: LingTouchDb) {
             experiences.put(
                 JSONObject()
                     .put("package", e.packageName)
-                    .put("trigger", e.trigger)
-                    .put("method", e.method)
-                    .put("steps", e.stepsJson)
+                    .put("trigger", Redactor.redactText(e.trigger))
+                    .put("method", Redactor.redactText(e.method))
+                    .put("steps", Redactor.redactJson(e.stepsJson))
                     .put("verified", e.verified)
                     .put("confidence", e.confidence.toDouble())
                     .put("successCount", e.successCount)
+                    .put("failCount", e.failCount)
+                    .put("errorType", e.errorType ?: "")
+                    .put("recovery", Redactor.redactText(e.recovery ?: ""))
+                    .put("appVersion", e.appVersion ?: "")
             )
         }
         return JSONObject()
             .put("app", "LingTouch")
-            .put("version", 1)
+            .put("version", 2)
             .put("exportedAt", System.currentTimeMillis())
             .put("memories", memories)
             .put("experiences", experiences)
@@ -283,7 +380,7 @@ class MemoryRepository(private val db: LingTouchDb) {
         val memories = root.optJSONArray("memories") ?: JSONArray()
         for (i in 0 until memories.length()) {
             val item = memories.optJSONObject(i) ?: continue
-            val title = item.str("title")
+            val title = Redactor.redactText(item.str("title"))
             if (title.isBlank()) continue
             val pkg = item.optString("package").takeIf { it.isNotBlank() }
             val exists = db.memories(MemoryType.from(item.str("type")), title.take(40))
@@ -295,7 +392,7 @@ class MemoryRepository(private val db: LingTouchDb) {
                     packageName = pkg,
                     appLabel = item.optString("appLabel").takeIf { it.isNotBlank() },
                     title = title.take(200),
-                    content = item.str("content").take(4000),
+                    content = Redactor.redactText(item.str("content")).take(4000),
                     verified = item.bool("verified"),
                     useCount = item.int("useCount"),
                     successCount = item.int("successCount"),
@@ -307,18 +404,22 @@ class MemoryRepository(private val db: LingTouchDb) {
         val experiences = root.optJSONArray("experiences") ?: JSONArray()
         for (i in 0 until experiences.length()) {
             val item = experiences.optJSONObject(i) ?: continue
-            val trigger = item.str("trigger")
-            val method = item.str("method")
+            val trigger = Redactor.redactText(item.str("trigger"))
+            val method = Redactor.redactText(item.str("method"))
             if (trigger.isBlank() || method.isBlank()) continue
             db.insertExperience(
                 ExperienceEntity(
                     packageName = item.optString("package").takeIf { it.isNotBlank() },
                     trigger = trigger.take(200),
                     method = method.take(2000),
-                    stepsJson = item.optString("steps"),
+                    stepsJson = Redactor.redactJson(item.optString("steps")),
                     verified = item.bool("verified"),
                     confidence = item.optDouble("confidence", 0.5).toFloat(),
-                    successCount = item.int("successCount")
+                    successCount = item.int("successCount"),
+                    failCount = item.int("failCount"),
+                    errorType = item.optString("errorType").takeIf { it.isNotBlank() },
+                    recovery = Redactor.redactText(item.optString("recovery")).takeIf { it.isNotBlank() },
+                    appVersion = item.optString("appVersion").takeIf { it.isNotBlank() }
                 )
             )
             count++

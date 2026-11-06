@@ -70,6 +70,10 @@ class ModelCatalog(
 
     fun find(id: String): ModelInfo? = _models.value.firstOrNull { it.id == id }
 
+    /** Catalog capability first, then a conservative name heuristic for uncached models. */
+    fun supportsVision(id: String): Boolean =
+        find(id)?.vision ?: VisionHeuristic.looksVision(id)
+
     private fun saveCache(models: List<ModelInfo>) {
         val array = JSONArray()
         models.forEach { m ->

@@ -61,6 +61,12 @@ class SettingsRepository(context: Context, private val secure: SecureStore) {
 
     private fun read(): AppSettings {
         val defaults = AppSettings()
+        if (!prefs.contains(KEY_SCREENSHOT_V2)) {
+            prefs.edit()
+                .putBoolean(KEY_SEND_SCREENSHOTS, true)
+                .putBoolean(KEY_SCREENSHOT_V2, true)
+                .apply()
+        }
         return AppSettings(
             provider = prefs.getString(KEY_PROVIDER, defaults.provider) ?: defaults.provider,
             baseUrl = prefs.getString(KEY_BASE_URL, defaults.baseUrl) ?: defaults.baseUrl,
@@ -68,6 +74,7 @@ class SettingsRepository(context: Context, private val secure: SecureStore) {
             model = prefs.getString(KEY_MODEL, defaults.model) ?: defaults.model,
             visionModel = prefs.getString(KEY_VISION_MODEL, defaults.visionModel) ?: defaults.visionModel,
             timeoutSeconds = prefs.getInt(KEY_TIMEOUT, defaults.timeoutSeconds),
+            toolTimeoutSeconds = prefs.getInt(KEY_TOOL_TIMEOUT, defaults.toolTimeoutSeconds),
             maxSteps = prefs.getInt(KEY_MAX_STEPS, defaults.maxSteps),
             maxRetries = prefs.getInt(KEY_MAX_RETRIES, defaults.maxRetries),
             sendScreenshots = prefs.getBoolean(KEY_SEND_SCREENSHOTS, defaults.sendScreenshots),
@@ -77,6 +84,9 @@ class SettingsRepository(context: Context, private val secure: SecureStore) {
             overlayX = prefs.getInt(KEY_OVERLAY_X, defaults.overlayX),
             overlayY = prefs.getInt(KEY_OVERLAY_Y, defaults.overlayY),
             guideDone = prefs.getBoolean(KEY_GUIDE_DONE, defaults.guideDone),
+            workUri = prefs.getString(KEY_WORK_URI, defaults.workUri) ?: defaults.workUri,
+            workName = prefs.getString(KEY_WORK_NAME, defaults.workName) ?: defaults.workName,
+            lastMode = prefs.getString(KEY_LAST_MODE, defaults.lastMode) ?: defaults.lastMode,
             lastTaskId = prefs.getLong(KEY_LAST_TASK, defaults.lastTaskId)
         )
     }
@@ -86,6 +96,7 @@ class SettingsRepository(context: Context, private val secure: SecureStore) {
         model = value.model.trim(),
         visionModel = value.visionModel.trim(),
         timeoutSeconds = AppSettings.clampTimeout(value.timeoutSeconds),
+        toolTimeoutSeconds = AppSettings.clampToolTimeout(value.toolTimeoutSeconds),
         maxSteps = AppSettings.clampSteps(value.maxSteps),
         maxRetries = AppSettings.clampRetries(value.maxRetries)
     )
@@ -98,12 +109,16 @@ class SettingsRepository(context: Context, private val secure: SecureStore) {
             .putString(KEY_MODEL, s.model)
             .putString(KEY_VISION_MODEL, s.visionModel)
             .putInt(KEY_TIMEOUT, s.timeoutSeconds)
+            .putInt(KEY_TOOL_TIMEOUT, s.toolTimeoutSeconds)
             .putInt(KEY_MAX_STEPS, s.maxSteps)
             .putInt(KEY_MAX_RETRIES, s.maxRetries)
             .putBoolean(KEY_SEND_SCREENSHOTS, s.sendScreenshots)
             .putBoolean(KEY_OCR, s.ocrEnabled)
             .putBoolean(KEY_AUTO_CLEANUP, s.autoCleanup)
             .putBoolean(KEY_OVERLAY, s.overlayEnabled)
+            .putString(KEY_WORK_URI, s.workUri)
+            .putString(KEY_WORK_NAME, s.workName)
+            .putString(KEY_LAST_MODE, s.lastMode)
             .putInt(KEY_OVERLAY_X, s.overlayX)
             .putInt(KEY_OVERLAY_Y, s.overlayY)
             .putBoolean(KEY_GUIDE_DONE, s.guideDone)
@@ -112,12 +127,17 @@ class SettingsRepository(context: Context, private val secure: SecureStore) {
     }
 
     private companion object {
+        const val KEY_WORK_URI = "work_uri"
+        const val KEY_WORK_NAME = "work_name"
+        const val KEY_LAST_MODE = "last_mode"
         const val KEY_PROVIDER = "provider"
         const val KEY_BASE_URL = "base_url"
         const val KEY_PROTOCOL = "protocol"
         const val KEY_MODEL = "model"
+        const val KEY_SCREENSHOT_V2 = "screenshot_default_v2"
         const val KEY_VISION_MODEL = "vision_model"
         const val KEY_TIMEOUT = "timeout"
+        const val KEY_TOOL_TIMEOUT = "tool_timeout"
         const val KEY_MAX_STEPS = "max_steps"
         const val KEY_MAX_RETRIES = "max_retries"
         const val KEY_SEND_SCREENSHOTS = "send_screenshots"

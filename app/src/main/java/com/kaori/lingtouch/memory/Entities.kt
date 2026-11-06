@@ -70,6 +70,10 @@ data class ExperienceEntity(
     val confidence: Float = 0.5f,
     val successCount: Int = 0,
     val failCount: Int = 0,
+    val errorType: String? = null,
+    val recovery: String? = null,
+    val uiSignature: String? = null,
+    val appVersion: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

@@ -103,6 +103,7 @@ class SettingsController(
         binding.visionModelInput.setText(s.visionModel)
         binding.timeoutInput.setText(s.timeoutSeconds.toString())
         binding.retriesInput.setText(s.maxRetries.toString())
+        binding.toolTimeoutInput.setText(s.toolTimeoutSeconds.toString())
         binding.switchScreenshots.isChecked = s.sendScreenshots
         binding.switchOcr.isChecked = s.ocrEnabled
         binding.switchCleanup.isChecked = s.autoCleanup
@@ -157,6 +158,7 @@ class SettingsController(
         }
         val timeout = text(binding.timeoutInput).toIntOrNull() ?: 120
         val retries = text(binding.retriesInput).toIntOrNull() ?: 2
+        val toolTimeout = text(binding.toolTimeoutInput).toIntOrNull() ?: 45
         val key = text(binding.apiKeyInput)
 
         app.settings.update {
@@ -168,6 +170,7 @@ class SettingsController(
                 visionModel = text(binding.visionModelInput),
                 timeoutSeconds = timeout,
                 maxRetries = retries,
+                toolTimeoutSeconds = toolTimeout,
                 sendScreenshots = binding.switchScreenshots.isChecked,
                 ocrEnabled = binding.switchOcr.isChecked,
                 autoCleanup = binding.switchCleanup.isChecked

@@ -32,7 +32,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-/** Floating ball + compact control panel rendered above other apps. */
+/**
+ * Draggable status ball plus a read-only status panel. Floating-window buttons were removed:
+ * pause/resume/stop must come from the task page so there is exactly one control surface.
+ */
 class OverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
@@ -139,7 +142,7 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -147,19 +150,6 @@ class OverlayService : Service() {
             x = (ballParams?.x ?: dp(16)).coerceIn(0, maxOf(0, metrics.widthPixels - dp(260)))
             y = ((ballParams?.y ?: dp(100)) + dp(64)).coerceIn(0, maxOf(0, metrics.heightPixels - dp(300)))
         }
-        binding.overlayOpenButton.setOnClickListener {
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            removePanel()
-        }
-        binding.overlayPauseButton.setOnClickListener {
-            if (app.agent.state.value.status == AgentStatus.PAUSED) app.agent.resume() else app.agent.pause()
-            render(app.agent.state.value)
-        }
-        binding.overlayStopButton.setOnClickListener {
-            app.agent.stop()
-            render(app.agent.state.value)
-        }
-        binding.overlayMinimizeButton.setOnClickListener { removePanel() }
         runCatching { windowManager.addView(binding.root, params) }
         panel = binding.root
         render(app.agent.state.value)
@@ -173,29 +163,29 @@ class OverlayService : Service() {
     private fun render(state: AgentUiState) {
         val color = when (state.status) {
             AgentStatus.RUNNING -> R.color.lt_ball_running
+            AgentStatus.RECOVERING -> R.color.lt_warning
             AgentStatus.FAILED -> R.color.lt_ball_error
-            AgentStatus.WAITING_CONFIRMATION -> R.color.lt_warning
+            AgentStatus.WAITING_USER -> R.color.lt_warning
             else -> R.color.lt_ball
         }
         (ball as? TextView)?.backgroundTintList =
             ContextCompat.getColorStateList(this, color)
         val binding = panel?.let { OverlayPanelBinding.bind(it) } ?: return
         binding.panelStatus.text = buildString {
-            append(when (state.status) {
-                AgentStatus.IDLE -> getString(R.string.overlay_status_idle)
-                AgentStatus.RUNNING -> getString(R.string.home_running)
-                AgentStatus.PAUSED -> getString(R.string.home_paused)
-                AgentStatus.WAITING_CONFIRMATION -> getString(R.string.task_confirm_title)
-                AgentStatus.COMPLETED -> getString(R.string.task_done)
-                AgentStatus.FAILED -> getString(R.string.task_failed)
-                AgentStatus.CANCELLED -> getString(R.string.task_cancelled)
-            })
+            append(
+                when (state.status) {
+                    AgentStatus.IDLE -> getString(R.string.overlay_status_idle)
+                    AgentStatus.PLANNING -> getString(R.string.home_running)
+                    AgentStatus.RUNNING -> getString(R.string.home_running)
+                    AgentStatus.PAUSED -> getString(R.string.home_paused)
+                    AgentStatus.WAITING_USER -> getString(R.string.task_confirm_title)
+                    AgentStatus.RECOVERING -> getString(R.string.status_running)
+                    AgentStatus.SUCCEEDED -> getString(R.string.task_done)
+                    AgentStatus.FAILED -> getString(R.string.task_failed)
+                    AgentStatus.CANCELLED -> getString(R.string.task_cancelled)
+                }
+            )
             if (state.goal.isNotBlank()) append(" · ${state.goal.take(30)}")
-        }
-        binding.overlayPauseButton.text = if (state.status == AgentStatus.PAUSED) {
-            getString(R.string.overlay_resume)
-        } else {
-            getString(R.string.overlay_pause)
         }
     }
 

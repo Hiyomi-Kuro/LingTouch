@@ -76,7 +76,7 @@ class LingTouchApp : Application() {
         shizuku = ShizukuManager(this)
         confirmation = ConfirmationBroker()
         tools = ToolExecutor(this, apps, shizuku, ocr, capture, temp, settings, confirmation)
-        observations = ObservationBuilder(this, capture, ocr, settings)
+        observations = ObservationBuilder(this, capture, ocr, settings, catalog)
         agent = AgentEngine(
             this, settings, db, memory, apps, shizuku, api, catalog,
             capture, ocr, temp, tools, observations, confirmation

@@ -1,5 +1,6 @@
 package com.kaori.lingtouch.tools
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 enum class Risk(val level: Int) {
@@ -40,9 +41,13 @@ data class AgentAction(
     val args: JSONObject,
     val thought: String = "",
     val expect: String = "",
-    val declaredRisk: Risk = Risk.LOW
+    val declaredRisk: Risk = Risk.LOW,
+    /** Optional plan/sub-goal array emitted alongside the action. */
+    val plan: JSONArray? = null
 ) {
-    fun signature(): String = "$name:${args}"
+    fun signature(): String = "$name:$args"
+
+    val isControl: Boolean get() = name == "finish_task" || name == "fail_task"
 }
 
 class ActionValidationException(message: String) : Exception(message)

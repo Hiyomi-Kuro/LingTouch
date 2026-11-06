@@ -10,6 +10,9 @@ import com.kaori.lingtouch.util.Logx
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import okhttp3.Call
 import okhttp3.Callback
@@ -90,7 +93,7 @@ class OpenCodeClient(private val settings: SettingsRepository) {
             ApiMessage("system", "You are a connectivity probe. Reply with the single word: pong"),
             ApiMessage("user", "ping")
         )
-        return chat(cfg.model, messages, jsonMode = false, maxTokens = 24, retries = 0)
+        return chat(cfg.model, messages, jsonMode = false, maxTokens = 256, retries = 0)
     }
 
     suspend fun chat(
@@ -130,7 +133,8 @@ class OpenCodeClient(private val settings: SettingsRepository) {
         model: String,
         messages: List<ApiMessage>,
         jsonMode: Boolean,
-        maxTokens: Int
+        maxTokens: Int,
+        allowBoost: Boolean = true
     ): ApiOutcome<ChatOutput> {
         val started = System.currentTimeMillis()
         val url = chatEndpoint(cfg.baseUrl, cfg.protocol)
@@ -160,27 +164,228 @@ class OpenCodeClient(private val settings: SettingsRepository) {
         if (code !in 200..299) {
             return ApiOutcome.Err(HttpErrors.fromHttp(code, body))
         }
-        val text = parseText(cfg.protocol, body)?.trim().orEmpty()
-        if (text.isBlank()) {
-            return ApiOutcome.Err(ApiError(ApiErrorKind.EMPTY, "模型返回为空（HTTP $code）", code, true))
+        ChatResponseParser.errorMessage(body)?.let { detail ->
+            return ApiOutcome.Err(
+                ApiError(ApiErrorKind.UNKNOWN, "接口在 HTTP $code 下返回错误：${detail.take(300)}", code, false)
+            )
+        }
+        val parsed = ChatResponseParser.parse(cfg.protocol, body)
+        val structure = ChatResponseParser.structure(body)
+        if (parsed == null || (parsed.text.isBlank() && parsed.reasoning.isBlank())) {
+            if (allowBoost && maxTokens < 4096 && structure.contains("finish_reason=length")) {
+                Logx.w("Api", "模型输出为空且被长度截断，提升 max_tokens 重试")
+                return chatOnce(cfg, key, model, messages, jsonMode, boostTokens(maxTokens), allowBoost = false)
+            }
+            return ApiOutcome.Err(
+                ApiError(ApiErrorKind.EMPTY, "模型返回为空（HTTP $code，$structure）", code, !structure.contains("finish_reason=length"))
+            )
+        }
+        if (parsed.text.isBlank()) {
+            if (allowBoost && maxTokens < 4096) {
+                Logx.w("Api", "模型仅返回推理内容（finish=${parsed.finishReason}），提升 max_tokens 重试")
+                return chatOnce(cfg, key, model, messages, jsonMode, boostTokens(maxTokens), allowBoost = false)
+            }
+            return ApiOutcome.Err(
+                ApiError(
+                    ApiErrorKind.EMPTY,
+                    "模型只返回了推理内容，没有最终回答（HTTP $code，finish_reason=${parsed.finishReason.ifBlank { "unknown" }}，$structure）",
+                    code,
+                    false
+                )
+            )
         }
         val root = parseObject(body)
         val usage = root?.obj("usage")
         val completion = ChatOutput(
-            text = text,
+            text = parsed.text.trim(),
             model = root?.str("model").orEmpty().ifBlank { model },
             promptTokens = usage?.int("prompt_tokens") ?: usage?.int("input_tokens") ?: 0,
             completionTokens = usage?.int("completion_tokens") ?: usage?.int("output_tokens") ?: 0,
             latencyMs = System.currentTimeMillis() - started,
-            raw = body
+            raw = body,
+            finishReason = parsed.finishReason,
+            reasoningChars = parsed.reasoning.length,
+            reasoning = parsed.reasoning
         )
-        Logx.d("Api", "响应 model=${completion.model} ${completion.latencyMs}ms tokens=${completion.promptTokens}/${completion.completionTokens} chars=${text.length}")
+        Logx.d("Api", "响应 model=${completion.model} ${completion.latencyMs}ms tokens=${completion.promptTokens}/${completion.completionTokens} chars=${completion.text.length} finish=${completion.finishReason}")
         return ApiOutcome.Ok(completion)
     }
 
     // ------------------------------------------------------------ payloads
 
-    private fun buildOpenAiChat(model: String, messages: List<ApiMessage>, jsonMode: Boolean, maxTokens: Int): String {
+
+    /**
+     * Streaming variant used by the chat home. Emits accumulated final text and accumulated
+     * reasoning after every SSE chunk so the UI can render the complete thinking process live.
+     * Non-OpenAI protocols, or gateways that ignore `stream`, degrade to one final delta.
+     */
+    suspend fun chatStream(
+        model: String,
+        messages: List<ApiMessage>,
+        jsonMode: Boolean = false,
+        maxTokens: Int = 4096,
+        onDelta: (text: String, reasoning: String) -> Unit
+    ): ApiOutcome<ChatOutput> {
+        val cfg = settings.state.value
+        val key = settings.apiKey()
+        if (key.isNullOrBlank()) {
+            return ApiOutcome.Err(ApiError(ApiErrorKind.UNAUTHORIZED, "尚未配置 API Key", 0, false))
+        }
+        if (cfg.protocol != ApiProtocol.OPENAI_CHAT) {
+            val outcome = chat(model, messages, jsonMode = jsonMode, maxTokens = maxTokens)
+            if (outcome is ApiOutcome.Ok) {
+                runCatching { onDelta(outcome.value.text, outcome.value.reasoning) }
+            }
+            return outcome
+        }
+        val maxAttempts = cfg.maxRetries.coerceAtLeast(0) + 1
+        var last: ApiError? = null
+        repeat(maxAttempts) { attempt ->
+            var received = false
+            val outcome = runCatching {
+                streamOnce(cfg, key, model, messages, jsonMode, maxTokens) { text, reasoning ->
+                    if (text.isNotBlank() || reasoning.isNotBlank()) received = true
+                    runCatching { onDelta(text, reasoning) }
+                }
+            }.getOrElse { ApiOutcome.Err(HttpErrors.fromThrowable(it)) }
+            when (outcome) {
+                is ApiOutcome.Ok -> return outcome
+                is ApiOutcome.Err -> {
+                    last = outcome.error
+                    Logx.w("Api", "流式请求失败(${outcome.error.kind}, HTTP ${outcome.error.httpCode}) attempt=$attempt")
+                    if (received || !outcome.error.retryable || attempt == maxAttempts - 1) {
+                        return outcome
+                    }
+                    delay((1200L shl attempt) + (0..400).random())
+                }
+            }
+        }
+        return ApiOutcome.Err(last ?: ApiError(ApiErrorKind.UNKNOWN, "流式请求失败", 0, false))
+    }
+
+    private suspend fun streamOnce(
+        cfg: AppSettings,
+        key: String,
+        model: String,
+        messages: List<ApiMessage>,
+        jsonMode: Boolean,
+        maxTokens: Int,
+        onDelta: (String, String) -> Unit
+    ): ApiOutcome<ChatOutput> = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        val url = chatEndpoint(cfg.baseUrl, ApiProtocol.OPENAI_CHAT)
+        val payload = buildOpenAiChat(model, messages, jsonMode, maxTokens, stream = true)
+        val request = Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream, application/json")
+            .header("User-Agent", USER_AGENT)
+            .header("x-opencode-session", sessionId)
+            .header("Authorization", "Bearer $key")
+            .post(payload.toRequestBody(JSON_MEDIA))
+            .build()
+        val timeout = maxOf(120, cfg.timeoutSeconds).toLong()
+        val client = baseClient.newBuilder()
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .readTimeout(timeout, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
+        val call = client.newCall(request)
+        val handle = coroutineContext[Job]?.invokeOnCompletion { runCatching { call.cancel() } }
+        try {
+            call.execute().use { resp ->
+                if (resp.code !in 200..299) {
+                    val body = runCatching { resp.body?.string().orEmpty() }.getOrDefault("")
+                    return@withContext ApiOutcome.Err(HttpErrors.fromHttp(resp.code, body))
+                }
+                val body = resp.body
+                    ?: return@withContext ApiOutcome.Err(
+                        ApiError(ApiErrorKind.EMPTY, "流式响应为空", resp.code, false)
+                    )
+                val text = StringBuilder()
+                val reasoning = StringBuilder()
+                var finish = ""
+                var promptTokens = 0
+                var completionTokens = 0
+                var streamError: String? = null
+                val eventStream = resp.header("Content-Type").orEmpty().contains("event-stream", true)
+                if (eventStream) {
+                    val source = body.source()
+                    while (true) {
+                        ensureActive()
+                        val line = source.readUtf8Line() ?: break
+                        val trimmed = line.trim()
+                        if (!trimmed.startsWith("data:")) continue
+                        val data = trimmed.removePrefix("data:").trim()
+                        if (data == "[DONE]") break
+                        val delta = SseStreamParser.parseData(data) ?: continue
+                        if (delta.error != null) {
+                            streamError = delta.error
+                            break
+                        }
+                        if (delta.text.isNotEmpty()) text.append(delta.text)
+                        if (delta.reasoning.isNotEmpty()) reasoning.append(delta.reasoning)
+                        if (delta.finish.isNotBlank()) finish = delta.finish
+                        if (delta.promptTokens > 0) promptTokens = delta.promptTokens
+                        if (delta.completionTokens > 0) completionTokens = delta.completionTokens
+                        if (delta.text.isNotEmpty() || delta.reasoning.isNotEmpty()) {
+                            runCatching { onDelta(text.toString(), reasoning.toString()) }
+                        }
+                    }
+                } else {
+                    val raw = body.string()
+                    val parsed = ChatResponseParser.parse(ApiProtocol.OPENAI_CHAT, raw)
+                        ?: ChatResponseParser.parse(cfg.protocol, raw)
+                    if (parsed != null) {
+                        text.append(parsed.text)
+                        reasoning.append(parsed.reasoning)
+                        finish = parsed.finishReason
+                        runCatching { onDelta(text.toString(), reasoning.toString()) }
+                    } else {
+                        streamError = ChatResponseParser.errorMessage(raw)
+                            ?: "网关返回了无法解析的响应（${raw.length} 字符）"
+                    }
+                }
+                if (streamError != null && text.isEmpty() && reasoning.isEmpty()) {
+                    return@withContext ApiOutcome.Err(
+                        ApiError(ApiErrorKind.UNKNOWN, "流式响应错误：${streamError.take(300)}", resp.code, false)
+                    )
+                }
+                if (text.isEmpty() && reasoning.isEmpty()) {
+                    return@withContext ApiOutcome.Err(
+                        ApiError(
+                            ApiErrorKind.EMPTY,
+                            "模型返回为空（流式，finish_reason=${finish.ifBlank { "unknown" }}）",
+                            resp.code,
+                            false
+                        )
+                    )
+                }
+                ApiOutcome.Ok(
+                    ChatOutput(
+                        text = text.toString().trim(),
+                        model = model,
+                        promptTokens = promptTokens,
+                        completionTokens = completionTokens,
+                        latencyMs = System.currentTimeMillis() - started,
+                        raw = "",
+                        finishReason = finish,
+                        reasoningChars = reasoning.length,
+                        reasoning = reasoning.toString()
+                    )
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ApiOutcome.Err(HttpErrors.fromThrowable(e))
+        } finally {
+            handle?.dispose()
+        }
+    }
+    private fun boostTokens(maxTokens: Int): Int = minOf(4096, maxOf(1024, maxTokens * 4))
+
+    private fun buildOpenAiChat(model: String, messages: List<ApiMessage>, jsonMode: Boolean, maxTokens: Int, stream: Boolean = false): String {
         val arr = JSONArray()
         messages.forEach { msg ->
             val content = if (msg.images.isEmpty()) {
@@ -205,6 +410,7 @@ class OpenCodeClient(private val settings: SettingsRepository) {
             .put("messages", arr)
             .put("temperature", 0.2)
             .put("max_tokens", maxTokens)
+            .put("stream", stream)
         if (jsonMode) root.put("response_format", JSONObject().put("type", "json_object"))
         return root.toString()
     }
@@ -228,6 +434,7 @@ class OpenCodeClient(private val settings: SettingsRepository) {
             .put("model", model)
             .put("input", input)
             .put("max_output_tokens", maxTokens)
+            .put("stream", false)
         if (!system.isNullOrBlank()) root.put("instructions", system)
         return root.toString()
     }
@@ -251,6 +458,7 @@ class OpenCodeClient(private val settings: SettingsRepository) {
         val root = JSONObject()
             .put("model", model)
             .put("max_tokens", maxTokens)
+            .put("stream", false)
             .put("temperature", 0.2)
             .put("messages", arr)
         if (system.isNotBlank()) root.put("system", system)
@@ -284,68 +492,6 @@ class OpenCodeClient(private val settings: SettingsRepository) {
     }
 
     // ------------------------------------------------------------- parsing
-
-    private fun parseText(protocol: ApiProtocol, body: String): String? {
-        val root = parseObject(body) ?: return null
-        return when (protocol) {
-            ApiProtocol.OPENAI_CHAT, ApiProtocol.OPENAI_RESPONSES -> {
-                val choices = root.optJSONArray("choices")
-                if (choices != null && choices.length() > 0) {
-                    val first = choices.optJSONObject(0) ?: return null
-                    val message = first.optJSONObject("message")
-                    val content = message?.opt("content") ?: first.opt("text")
-                    contentToText(content)
-                } else {
-                    val outputText = root.optString("output_text")
-                    if (outputText.isNotBlank()) outputText else parseResponsesOutput(root)
-                }
-            }
-            ApiProtocol.ANTHROPIC -> {
-                val content = root.optJSONArray("content") ?: return null
-                buildString {
-                    for (i in 0 until content.length()) {
-                        val part = content.optJSONObject(i) ?: continue
-                        if (part.optString("type") == "text") append(part.optString("text"))
-                    }
-                }.ifBlank { null }
-            }
-            ApiProtocol.GEMINI -> {
-                val candidates = root.optJSONArray("candidates") ?: return null
-                val first = candidates.optJSONObject(0) ?: return null
-                val parts = first.optJSONObject("content")?.optJSONArray("parts") ?: return null
-                buildString {
-                    for (i in 0 until parts.length()) {
-                        append(parts.optJSONObject(i)?.optString("text").orEmpty())
-                    }
-                }.ifBlank { null }
-            }
-        }
-    }
-
-    private fun contentToText(content: Any?): String? = when (content) {
-        is String -> content
-        is JSONArray -> buildString {
-            for (i in 0 until content.length()) {
-                val part = content.optJSONObject(i) ?: continue
-                if (part.optString("type") in setOf("text", "output_text")) append(part.optString("text"))
-            }
-        }.ifBlank { null }
-        else -> null
-    }
-
-    private fun parseResponsesOutput(root: JSONObject): String? {
-        val output = root.optJSONArray("output") ?: return null
-        val builder = StringBuilder()
-        for (i in 0 until output.length()) {
-            val item = output.optJSONObject(i) ?: continue
-            val content = item.optJSONArray("content") ?: continue
-            for (j in 0 until content.length()) {
-                val part = content.optJSONObject(j) ?: continue
-                if (part.optString("type") == "output_text") builder.append(part.optString("text"))
-            }
-        }
-        return builder.toString().ifBlank { null }
-    }
 
     private fun parseModels(body: String): List<ModelInfo> {
         val root = parseObject(body) ?: return emptyList()
