@@ -70,24 +70,37 @@ class WorkFileTools(private val context: Context, private val treeUri: Uri) {
         result
     }
 
-    suspend fun read(path: String, encoding: String = "text", maxBytes: Int = 240_000): String =
+    suspend fun read(path: String, encoding: String = "auto", maxBytes: Int = 240_000): String =
         withContext(Dispatchers.IO) {
             val entry = resolve(path)
             if (entry.isDir) throw IllegalStateException("$path 是目录，请使用 list_files")
             val bytes = readLimited(entry, maxBytes)
             val truncated = entry.size > bytes.size
             val suffix = if (truncated) "\n\n[已截断：原文件 ${entry.size} 字节]" else ""
-            when (encoding.lowercase()) {
-                "base64" -> {
+            when (encoding.trim().lowercase()) {
+                "base64", "raw" -> {
                     if (truncated) {
                         throw IllegalStateException("二进制文件超过单次读取上限，请增大 max_bytes（当前 ${bytes.size} 字节）")
                     }
                     Base64.encodeToString(bytes, Base64.NO_WRAP)
                 }
+                "auto" -> {
+                    if (!looksBinary(bytes)) {
+                        String(bytes, Charsets.UTF_8) + suffix
+                    } else {
+                        if (truncated) {
+                            throw IllegalStateException(
+                                "二进制文件超过单次读取上限（${entry.size} 字节），请增大 max_bytes 或改用 file_info"
+                            )
+                        }
+                        "[二进制文件：${entry.size} 字节，${entry.mime}；以下为 base64]\n" +
+                            Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    }
+                }
                 else -> {
                     if (looksBinary(bytes)) {
                         throw IllegalStateException(
-                            "文件是二进制（${entry.size} 字节，${entry.mime}）。请用 encoding=base64 读取，或改用 file_info 查看元数据"
+                            "文件是二进制（${entry.size} 字节，${entry.mime}）。请用 encoding=base64 或 encoding=auto 读取，或改用 file_info 查看元数据"
                         )
                     }
                     String(bytes, Charsets.UTF_8) + suffix
@@ -130,9 +143,7 @@ class WorkFileTools(private val context: Context, private val treeUri: Uri) {
                 else -> content.toByteArray(Charsets.UTF_8)
             }
             if (bytes.size > 4 * 1024 * 1024) throw IllegalStateException("单次写入不能超过 4MB")
-            val target = existing?.uri ?: (DocumentsContract.createDocument(
-                resolver, parent.uri, mimeFor(name), name
-            ) ?: throw IllegalStateException("系统拒绝创建文件 $path（工作目录可能只读）"))
+            val target = existing?.uri ?: createFile(parent, name, path)
             val stream = runCatching { resolver.openOutputStream(target, "wt") }.getOrNull()
                 ?: resolver.openOutputStream(target, "w")
                 ?: throw IllegalStateException("无法打开 $path 写入")
@@ -270,6 +281,42 @@ class WorkFileTools(private val context: Context, private val treeUri: Uri) {
         return list
     }
 
+    /**
+     * Creates a document with the exact requested display name.
+     *
+     * SAF providers derive the stored extension from the MIME type, so a generic text/plain
+     * for `AGENTS.md` produced `AGENTS.md.txt`. We pass an extension-matched MIME where
+     * possible, then verify the real display name reported by the provider and rename if
+     * it still rewrote the name.
+     */
+    private fun createFile(parent: Entry, name: String, requestedPath: String): Uri {
+        val created = DocumentsContract.createDocument(resolver, parent.uri, mimeFor(name), name)
+            ?: throw IllegalStateException("系统拒绝创建文件 $requestedPath（工作目录可能只读）")
+        val actualName = displayNameOf(created)
+        if (actualName == name) return created
+        if (actualName.isBlank()) return created
+
+        val renamed = runCatching { DocumentsContract.renameDocument(resolver, created, name) }.getOrNull()
+        if (renamed != null && displayNameOf(renamed) == name) return renamed
+
+        // Some providers rename successfully but return null; look the document up by name.
+        val exact = runCatching { children(parent.docId).firstOrNull { it.name == name } }.getOrNull()
+        if (exact != null) return exact.uri
+
+        val cleanup = renamed ?: created
+        runCatching { DocumentsContract.deleteDocument(resolver, cleanup) }
+        throw IllegalStateException(
+            "系统把文件名改写成了 \"$actualName\"（期望 \"$name\"）。已停止写入，请重试或更换工作目录"
+        )
+    }
+
+    private fun displayNameOf(uri: Uri): String =
+        runCatching {
+            resolver.query(uri, arrayOf(Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
+            }.orEmpty()
+        }.getOrDefault("")
+
     private fun ensureDirectory(path: String): Entry {
         val normalized = normalize(path)
         var current = rootEntry()
@@ -356,16 +403,99 @@ class WorkFileTools(private val context: Context, private val treeUri: Uri) {
             mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") ||
                 mime.contains("zip") || mime.contains("octet-stream") || mime.contains("pdf")
 
-        fun mimeFor(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-            "kt", "java", "xml", "md", "txt", "json", "gradle", "properties", "yml", "yaml", "html", "css", "js", "ts" ->
-                "text/plain"
-            "png" -> "image/png"
-            "jpg", "jpeg" -> "image/jpeg"
-            "webp" -> "image/webp"
-            "pdf" -> "application/pdf"
-            "apk" -> "application/vnd.android.package-archive"
-            "zip" -> "application/zip"
-            else -> "application/octet-stream"
+        /**
+         * MIME types that match the requested extension, so SAF providers keep the exact
+         * filename. A generic text/plain makes ExternalStorageProvider append `.txt`
+         * (AGENTS.md -> AGENTS.md.txt); an extension-specific type does not.
+         */
+        private val MIME_BY_EXTENSION = mapOf(
+            "txt" to "text/plain",
+            "text" to "text/plain",
+            "log" to "text/plain",
+            "md" to "text/markdown",
+            "markdown" to "text/markdown",
+            "json" to "application/json",
+            "jsonl" to "application/x-ndjson",
+            "xml" to "application/xml",
+            "html" to "text/html",
+            "htm" to "text/html",
+            "css" to "text/css",
+            "csv" to "text/csv",
+            "tsv" to "text/tab-separated-values",
+            "js" to "text/javascript",
+            "mjs" to "text/javascript",
+            "cjs" to "text/javascript",
+            "jsx" to "text/jsx",
+            "ts" to "text/x-typescript",
+            "tsx" to "text/x-typescript",
+            "kt" to "text/x-kotlin",
+            "kts" to "text/x-kotlin",
+            "java" to "text/x-java-source",
+            "gradle" to "text/x-gradle",
+            "properties" to "text/x-java-properties",
+            "yml" to "text/yaml",
+            "yaml" to "text/yaml",
+            "toml" to "text/x-toml",
+            "ini" to "text/x-ini",
+            "cfg" to "text/x-ini",
+            "conf" to "text/plain",
+            "sh" to "application/x-sh",
+            "bash" to "application/x-sh",
+            "zsh" to "application/x-sh",
+            "py" to "text/x-python",
+            "rb" to "text/x-ruby",
+            "go" to "text/x-go",
+            "rs" to "text/x-rust",
+            "c" to "text/x-c",
+            "h" to "text/x-c",
+            "cc" to "text/x-c++src",
+            "cpp" to "text/x-c++src",
+            "hpp" to "text/x-c++hdr",
+            "sql" to "application/sql",
+            "svg" to "image/svg+xml",
+            "png" to "image/png",
+            "jpg" to "image/jpeg",
+            "jpeg" to "image/jpeg",
+            "webp" to "image/webp",
+            "gif" to "image/gif",
+            "bmp" to "image/bmp",
+            "ico" to "image/x-icon",
+            "heic" to "image/heic",
+            "pdf" to "application/pdf",
+            "zip" to "application/zip",
+            "apk" to "application/vnd.android.package-archive",
+            "jar" to "application/java-archive",
+            "mp3" to "audio/mpeg",
+            "wav" to "audio/wav",
+            "m4a" to "audio/mp4",
+            "ogg" to "audio/ogg",
+            "mp4" to "video/mp4",
+            "webm" to "video/webm",
+            "ttf" to "font/ttf",
+            "otf" to "font/otf",
+            "woff" to "font/woff",
+            "woff2" to "font/woff2",
+            "wasm" to "application/wasm"
+        )
+
+        private val TEXT_FILE_NAMES = setOf(
+            "makefile", "dockerfile", "containerfile", "license", "licence", "readme",
+            "changelog", "gemfile", "rakefile", "procfile", "justfile", "workspace",
+            "build", ".gitignore", ".gitattributes", ".editorconfig", ".env",
+            ".npmrc", ".prettierrc", ".babelrc", ".dockerignore", ".gitmodules"
+        )
+
+        fun mimeFor(name: String): String {
+            val dot = name.lastIndexOf('.')
+            val extension = if (dot > 0 && dot < name.length - 1) {
+                name.substring(dot + 1).lowercase()
+            } else {
+                ""
+            }
+            if (extension.isNotEmpty()) {
+                return MIME_BY_EXTENSION[extension] ?: "application/octet-stream"
+            }
+            return if (name.lowercase() in TEXT_FILE_NAMES) "text/plain" else "application/octet-stream"
         }
 
         fun displayName(context: Context, uri: Uri): String {

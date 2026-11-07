@@ -158,3 +158,13 @@ bash gradlew --no-daemon \
 - 历史：按模式列出、打开、删除（级联删除消息）。
 - 操控模式视觉定位：每步自动截图 + OCR；OCR 返回屏幕坐标 center；视觉模型附带截图，Unity/游戏可用坐标点击。
 - 本报告仅记录构建与 JVM 单测；安装、真实 API、无障碍/截图/OCR、跨应用执行仍需用户实机验证。
+
+---
+
+## 8. 2026-11-08 工作模式文件名修复复测
+
+- 修改：工作模式写文件时按扩展名选择 MIME，并在 SAF 仍改写文件名时校验 `COLUMN_DISPLAY_NAME` 后调用 `DocumentsContract.renameDocument`；读取默认 `auto`，文本返回 UTF-8，二进制返回 base64。
+- 构建：`BUILD SUCCESSFUL in 1m 26s`，`:app:assembleDebug` 与 `:app:testDebugUnitTest` 同次通过。
+- 单元测试：116 项全部通过，0 失败；`WorkFileToolsTest` 6 项通过（新增文件名/MIME 回归测试）。
+- APK：`app/build/outputs/apk/debug/app-debug.apk`（63,446,749 字节），根目录副本 `app-debug.apk`，SHA-256 `99a2cb4a79fb39347f7066f1e1907f039b6fb54b39851b65cd00c8d262a1bb57`。
+- 设备安装与实机测试：按用户要求未执行，交由用户完成。

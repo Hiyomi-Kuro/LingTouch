@@ -31,4 +31,22 @@ class WorkFileToolsTest {
         assertTrue(WorkFileTools.looksBinary(byteArrayOf(1, 2, 0, 4)))
         assertFalse(WorkFileTools.looksBinary("hello".toByteArray()))
     }
+
+    @Test
+    fun `mime matches requested extension`() {
+        assertEquals("text/markdown", WorkFileTools.mimeFor("AGENTS.md"))
+        assertEquals("text/x-kotlin", WorkFileTools.mimeFor("Main.kt"))
+        assertEquals("application/json", WorkFileTools.mimeFor("config.json"))
+        assertEquals("image/png", WorkFileTools.mimeFor("icon.png"))
+        assertEquals("application/octet-stream", WorkFileTools.mimeFor("data.unknown"))
+        assertEquals("text/plain", WorkFileTools.mimeFor("Makefile"))
+        assertEquals("text/plain", WorkFileTools.mimeFor(".gitignore"))
+    }
+
+    @Test
+    fun `normalize keeps exact file names and extensions`() {
+        assertEquals("AGENTS.md", WorkFileTools.normalize("AGENTS.md"))
+        assertEquals("docs/AGENTS.md", WorkFileTools.normalize("./docs/AGENTS.md"))
+        assertEquals(".gitignore", WorkFileTools.normalize(".gitignore"))
+    }
 }

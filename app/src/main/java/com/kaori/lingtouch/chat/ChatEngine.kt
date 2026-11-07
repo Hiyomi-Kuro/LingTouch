@@ -279,7 +279,7 @@ class ChatEngine(
             }
             "read_file" -> tools.read(
                 path = path,
-                encoding = args.optString("encoding").ifBlank { "text" },
+                encoding = args.optString("encoding").ifBlank { "auto" },
                 maxBytes = args.optInt("max_bytes", 240_000).coerceIn(1_000, 1_000_000)
             )
             "write_file" -> tools.write(
