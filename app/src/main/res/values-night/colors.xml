@@ -1,21 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="lt_primary">#B9C3FF</color>
-    <color name="lt_on_primary">#00218E</color>
-    <color name="lt_primary_container">#1739B0</color>
-    <color name="lt_on_primary_container">#DDE1FF</color>
-    <color name="lt_secondary">#C4C5DD</color>
-    <color name="lt_surface">#131318</color>
-    <color name="lt_surface_variant">#46464F</color>
-    <color name="lt_background">#101014</color>
-    <color name="lt_card">#1B1B21</color>
-    <color name="lt_text_primary">#E5E1E9</color>
-    <color name="lt_text_secondary">#C4C5DD</color>
-    <color name="lt_success">#6BD48F</color>
-    <color name="lt_error">#FFB4AB</color>
-    <color name="lt_warning">#FFB95C</color>
-    <color name="lt_divider">#2C2C34</color>
-    <color name="lt_ball">#B9C3FF</color>
-    <color name="lt_ball_running">#5BE0A0</color>
-    <color name="lt_ball_error">#FF8A80</color>
+    <!-- opencode.ai palette (dark): near-black paper, near-white ink, faint rules. -->
+    <color name="lt_ink">#FAFAFA</color>
+    <color name="lt_on_ink">#0C0C0C</color>
+    <color name="lt_primary">#6B8FFF</color>
+    <color name="lt_on_primary">#0C0C0C</color>
+    <color name="lt_primary_container">#242424</color>
+    <color name="lt_on_primary_container">#FAFAFA</color>
+    <color name="lt_secondary">#AEAEAE</color>
+    <color name="lt_surface">#161616</color>
+    <color name="lt_surface_variant">#1A1A1A</color>
+    <color name="lt_surface_weak">#1A1A1A</color>
+    <color name="lt_background">#0C0C0C</color>
+    <color name="lt_card">#161616</color>
+    <color name="lt_text_primary">#FAFAFA</color>
+    <color name="lt_text_secondary">#8F8F8F</color>
+    <color name="lt_text_muted">#6A6A6A</color>
+    <color name="lt_success">#54D483</color>
+    <color name="lt_error">#ED5A5A</color>
+    <color name="lt_warning">#F4B434</color>
+    <color name="lt_divider">#2E2E2E</color>
+    <color name="lt_border_strong">#4B4B4B</color>
+    <color name="lt_ball">#FAFAFA</color>
+    <color name="lt_ball_running">#54D483</color>
+    <color name="lt_ball_error">#ED5A5A</color>
 </resources>

@@ -1,16 +1,63 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+        Visual language copied from opencode.ai: monospace type, near-white paper
+        (near-black in night mode), 1dp rules, 8dp corners, ink primary actions and
+        a single blue link accent. All tokens resolve per configuration through
+        values/colors.xml and values-night/colors.xml.
+    -->
     <style name="Base.AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/lt_primary</item>
-        <item name="colorOnPrimary">@color/lt_on_primary</item>
+        <item name="colorPrimary">@color/lt_ink</item>
+        <item name="colorOnPrimary">@color/lt_on_ink</item>
         <item name="colorPrimaryContainer">@color/lt_primary_container</item>
         <item name="colorOnPrimaryContainer">@color/lt_on_primary_container</item>
         <item name="colorSecondary">@color/lt_secondary</item>
+        <item name="colorOnSecondary">@color/lt_on_ink</item>
+        <item name="colorSecondaryContainer">@color/lt_surface_variant</item>
+        <item name="colorOnSecondaryContainer">@color/lt_text_primary</item>
+        <item name="colorTertiary">@color/lt_primary</item>
+        <item name="colorOnTertiary">@color/lt_on_primary</item>
         <item name="colorSurface">@color/lt_surface</item>
+        <item name="colorOnSurface">@color/lt_text_primary</item>
         <item name="colorSurfaceVariant">@color/lt_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/lt_text_secondary</item>
+        <item name="colorSurfaceContainerLow">@color/lt_card</item>
+        <item name="colorSurfaceContainer">@color/lt_surface_variant</item>
+        <item name="colorSurfaceContainerHigh">@color/lt_surface_variant</item>
+        <item name="colorSurfaceInverse">@color/lt_ink</item>
+        <item name="colorOnSurfaceInverse">@color/lt_on_ink</item>
+        <item name="colorOutline">@color/lt_divider</item>
+        <item name="colorOutlineVariant">@color/lt_divider</item>
+        <item name="colorError">@color/lt_error</item>
+        <item name="colorOnError">#FFFFFF</item>
         <item name="android:colorBackground">@color/lt_background</item>
+        <item name="colorOnBackground">@color/lt_text_primary</item>
+        <item name="android:windowBackground">@color/lt_background</item>
         <item name="android:navigationBarColor">@color/lt_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar" tools:targetApi="23">true</item>
+        <item name="android:windowLightStatusBar">@bool/lt_light_system_bars</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">@bool/lt_light_system_bars</item>
+
+        <!-- opencode.ai sets its sans token to its mono face. -->
+        <item name="android:fontFamily">monospace</item>
+        <item name="fontFamily">monospace</item>
+        <item name="textAppearanceBodyLarge">@style/TextAppearance.LingTouch.BodyLarge</item>
+        <item name="textAppearanceBodyMedium">@style/TextAppearance.LingTouch.BodyMedium</item>
+        <item name="textAppearanceBodySmall">@style/TextAppearance.LingTouch.BodySmall</item>
+        <item name="textAppearanceLabelLarge">@style/TextAppearance.LingTouch.LabelLarge</item>
+        <item name="textAppearanceLabelMedium">@style/TextAppearance.LingTouch.LabelMedium</item>
+        <item name="textAppearanceLabelSmall">@style/TextAppearance.LingTouch.LabelSmall</item>
+        <item name="textAppearanceTitleLarge">@style/TextAppearance.LingTouch.TitleLarge</item>
+        <item name="textAppearanceTitleMedium">@style/TextAppearance.LingTouch.TitleMedium</item>
+        <item name="textAppearanceTitleSmall">@style/TextAppearance.LingTouch.TitleSmall</item>
+
+        <!-- Geometry: the website uses 8px controls and slightly rounded cards. -->
+        <item name="shapeAppearanceCornerExtraSmall">@style/ShapeAppearance.LingTouch.CornerExtraSmall</item>
+        <item name="shapeAppearanceCornerSmall">@style/ShapeAppearance.LingTouch.CornerSmall</item>
+        <item name="shapeAppearanceCornerMedium">@style/ShapeAppearance.LingTouch.CornerMedium</item>
+        <item name="shapeAppearanceCornerLarge">@style/ShapeAppearance.LingTouch.CornerLarge</item>
+        <item name="shapeAppearanceCornerExtraLarge">@style/ShapeAppearance.LingTouch.CornerExtraLarge</item>
+
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.LingTouch.MaterialAlertDialog</item>
     </style>
 
     <style name="AppTheme" parent="Base.AppTheme" />
@@ -23,14 +70,158 @@
         <item name="android:backgroundDimEnabled">false</item>
     </style>
 
-    <style name="Widget.LingTouch.Card" parent="Widget.Material3.CardView.Elevated">
-        <item name="cardCornerRadius">18dp</item>
-        <item name="cardElevation">0dp</item>
-        <item name="cardBackgroundColor">@color/lt_card</item>
-        <item name="android:layout_marginBottom">12dp</item>
+    <!-- Text: monospace everywhere, like the site. -->
+    <style name="TextAppearance.LingTouch.BodyLarge" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.BodyMedium" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.BodySmall" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.LabelLarge" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.LabelMedium" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.LabelSmall" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.TitleLarge" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.TitleSmall" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.Toolbar" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/lt_text_primary</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.LingTouch.Toolbar.Subtitle" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/lt_text_secondary</item>
+        <item name="android:letterSpacing">0</item>
     </style>
 
     <style name="TextAppearance.LingTouch.Section" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/lt_text_primary</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!-- Surfaces: flat cards with a 1dp rule, 10dp corners, no elevation. -->
+    <style name="Widget.LingTouch.Card" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardCornerRadius">10dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="cardBackgroundColor">@color/lt_card</item>
+        <item name="strokeColor">@color/lt_divider</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="android:layout_marginBottom">12dp</item>
+    </style>
+
+    <style name="Widget.LingTouch.ChipButton" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/lt_text_secondary</item>
+        <item name="iconTint">@color/lt_text_secondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="Widget.LingTouch.TextInput" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">8dp</item>
+        <item name="boxCornerRadiusTopEnd">8dp</item>
+        <item name="boxCornerRadiusBottomStart">8dp</item>
+        <item name="boxCornerRadiusBottomEnd">8dp</item>
+        <item name="boxStrokeColor">@color/lt_textfield_stroke</item>
+        <item name="boxStrokeWidth">1dp</item>
+        <item name="boxStrokeWidthFocused">1dp</item>
+        <item name="hintTextColor">@color/lt_text_secondary</item>
+    </style>
+
+    <style name="Widget.LingTouch.TextInput.Dropdown" parent="Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+        <item name="boxCornerRadiusTopStart">8dp</item>
+        <item name="boxCornerRadiusTopEnd">8dp</item>
+        <item name="boxCornerRadiusBottomStart">8dp</item>
+        <item name="boxCornerRadiusBottomEnd">8dp</item>
+        <item name="boxStrokeColor">@color/lt_textfield_stroke</item>
+        <item name="boxStrokeWidth">1dp</item>
+        <item name="boxStrokeWidthFocused">1dp</item>
+        <item name="hintTextColor">@color/lt_text_secondary</item>
+    </style>
+
+    <style name="ShapeAppearance.LingTouch.CornerExtraSmall" parent="ShapeAppearance.Material3.Corner.ExtraSmall">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">3dp</item>
+    </style>
+
+    <style name="ShapeAppearance.LingTouch.CornerSmall" parent="ShapeAppearance.Material3.Corner.Small">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">6dp</item>
+    </style>
+
+    <style name="ShapeAppearance.LingTouch.CornerMedium" parent="ShapeAppearance.Material3.Corner.Medium">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="ShapeAppearance.LingTouch.CornerLarge" parent="ShapeAppearance.Material3.Corner.Large">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">10dp</item>
+    </style>
+
+    <style name="ShapeAppearance.LingTouch.CornerExtraLarge" parent="ShapeAppearance.Material3.Corner.ExtraLarge">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">12dp</item>
+    </style>
+
+    <!-- Override Material3 component shapes so buttons and the nav indicator use 8dp. -->
+    <style name="ShapeAppearance.M3.Comp.FilledButton.Container.Shape" parent="ShapeAppearance.M3.Sys.Shape.Corner.Full">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="ShapeAppearance.M3.Comp.TextButton.Container.Shape" parent="ShapeAppearance.M3.Sys.Shape.Corner.Full">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="ShapeAppearance.M3.Comp.NavigationBar.ActiveIndicator.Shape" parent="ShapeAppearance.M3.Sys.Shape.Corner.Full">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="ThemeOverlay.LingTouch.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">@color/lt_surface</item>
+        <item name="colorOnSurface">@color/lt_text_primary</item>
+        <item name="colorPrimary">@color/lt_ink</item>
+        <item name="colorOnPrimary">@color/lt_on_ink</item>
+        <item name="android:fontFamily">monospace</item>
     </style>
 </resources>

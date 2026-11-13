@@ -12,8 +12,16 @@
         android:layout_height="?attr/actionBarSize"
         android:background="@color/lt_background"
         app:subtitle="@string/app_tagline"
+        app:subtitleTextAppearance="@style/TextAppearance.LingTouch.Toolbar.Subtitle"
+        app:subtitleTextColor="@color/lt_text_secondary"
         app:title="@string/app_name"
-        app:titleTextAppearance="@style/TextAppearance.Material3.TitleLarge" />
+        app:titleTextAppearance="@style/TextAppearance.LingTouch.Toolbar"
+        app:titleTextColor="@color/lt_text_primary" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/lt_divider" />
 
     <FrameLayout
         android:id="@+id/content"
@@ -27,11 +35,21 @@
         <include android:id="@+id/settingsView" layout="@layout/view_settings" />
     </FrameLayout>
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/lt_divider" />
+
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/lt_card"
+        android:background="@color/lt_surface"
+        android:elevation="0dp"
+        app:itemIconTint="@color/lt_nav_item"
+        app:itemTextAppearanceActive="@style/TextAppearance.LingTouch.LabelMedium"
+        app:itemTextAppearanceInactive="@style/TextAppearance.LingTouch.LabelMedium"
+        app:itemTextColor="@color/lt_nav_item"
         app:labelVisibilityMode="labeled"
         app:menu="@menu/menu_bottom" />
 </LinearLayout>

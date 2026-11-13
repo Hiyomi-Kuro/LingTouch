@@ -12,7 +12,14 @@
         android:layout_height="?attr/actionBarSize"
         android:background="@color/lt_background"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:title="@string/task_title" />
+        app:navigationIconTint="@color/lt_text_primary"
+        app:title="@string/task_title"
+        app:titleTextAppearance="@style/TextAppearance.LingTouch.Toolbar"
+        app:titleTextColor="@color/lt_text_primary" />
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/lt_divider" />
 
     <com.google.android.material.card.MaterialCardView
         style="@style/Widget.LingTouch.Card"

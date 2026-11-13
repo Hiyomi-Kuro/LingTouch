@@ -1,21 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="lt_primary">#3D5AFE</color>
+    <!-- opencode.ai palette (light): near-white paper, ink text, thin grey rules. -->
+    <color name="lt_ink">#161616</color>
+    <color name="lt_on_ink">#FBFBFB</color>
+    <color name="lt_primary">#3B5CF6</color>
     <color name="lt_on_primary">#FFFFFF</color>
-    <color name="lt_primary_container">#DDE1FF</color>
-    <color name="lt_on_primary_container">#00105C</color>
-    <color name="lt_secondary">#5B5D72</color>
-    <color name="lt_surface">#FBF8FD</color>
-    <color name="lt_surface_variant">#E3E1EC</color>
-    <color name="lt_background">#F5F3FA</color>
+    <color name="lt_primary_container">#EEEEEE</color>
+    <color name="lt_on_primary_container">#161616</color>
+    <color name="lt_secondary">#5C5C5C</color>
+    <color name="lt_surface">#FFFFFF</color>
+    <color name="lt_surface_variant">#F5F5F5</color>
+    <color name="lt_surface_weak">#F5F5F5</color>
+    <color name="lt_background">#FBFBFB</color>
     <color name="lt_card">#FFFFFF</color>
-    <color name="lt_text_primary">#1B1B21</color>
-    <color name="lt_text_secondary">#5B5D72</color>
-    <color name="lt_success">#1B873F</color>
-    <color name="lt_error">#BA1A1A</color>
-    <color name="lt_warning">#B26A00</color>
-    <color name="lt_divider">#E6E3EC</color>
-    <color name="lt_ball">#3D5AFE</color>
-    <color name="lt_ball_running">#00A86B</color>
-    <color name="lt_ball_error">#D32F2F</color>
+    <color name="lt_text_primary">#161616</color>
+    <color name="lt_text_secondary">#6B6B6B</color>
+    <color name="lt_text_muted">#888888</color>
+    <color name="lt_success">#239F50</color>
+    <color name="lt_error">#DB2424</color>
+    <color name="lt_warning">#EB980A</color>
+    <color name="lt_divider">#E0E0E0</color>
+    <color name="lt_border_strong">#D2D2D2</color>
+    <color name="lt_ball">#161616</color>
+    <color name="lt_ball_running">#239F50</color>
+    <color name="lt_ball_error">#DB2424</color>
 </resources>

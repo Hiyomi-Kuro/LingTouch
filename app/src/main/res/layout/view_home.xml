@@ -29,7 +29,7 @@
                 android:layout_weight="1"
                 android:text="@string/chat_mode_control"
                 android:textSize="13sp"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="8dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/modeChat"
@@ -39,7 +39,7 @@
                 android:layout_weight="1"
                 android:text="@string/chat_mode_chat"
                 android:textSize="13sp"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="8dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/modeWork"
@@ -49,7 +49,7 @@
                 android:layout_weight="1"
                 android:text="@string/chat_mode_work"
                 android:textSize="13sp"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="8dp" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <HorizontalScrollView
@@ -65,7 +65,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/modelChip"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.LingTouch.ChipButton"
                     android:layout_width="wrap_content"
                     android:layout_height="40dp"
                     android:maxLines="1"
@@ -78,7 +78,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/cwdChip"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.LingTouch.ChipButton"
                     android:layout_width="wrap_content"
                     android:layout_height="40dp"
                     android:maxLines="1"
@@ -91,7 +91,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/memoryChip"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.LingTouch.ChipButton"
                     android:layout_width="wrap_content"
                     android:layout_height="40dp"
                     android:text="@string/chat_memory"
@@ -103,7 +103,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/historyChip"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.LingTouch.ChipButton"
                     android:layout_width="wrap_content"
                     android:layout_height="40dp"
                     android:text="@string/chat_history"
@@ -111,7 +111,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/exportChip"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.LingTouch.ChipButton"
                     android:layout_width="wrap_content"
                     android:layout_height="40dp"
                     android:text="@string/chat_export"
@@ -119,7 +119,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/newChatChip"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.LingTouch.ChipButton"
                     android:layout_width="wrap_content"
                     android:layout_height="40dp"
                     android:text="@string/chat_new"
@@ -268,7 +268,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/refButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.LingTouch.ChipButton"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:contentDescription="@string/chat_ref_add"
@@ -290,7 +290,7 @@
             android:paddingEnd="14dp"
             android:paddingBottom="12dp"
             android:textColor="@color/lt_text_primary"
-            android:textColorHint="@color/lt_text_secondary"
+            android:textColorHint="@color/lt_text_muted"
             android:textSize="14sp" />
 
         <com.google.android.material.button.MaterialButton
@@ -328,6 +328,6 @@
         android:paddingTop="2dp"
         android:paddingEnd="16dp"
         android:paddingBottom="8dp"
-        android:textColor="@color/lt_text_secondary"
+        android:textColor="@color/lt_primary"
         android:textSize="11sp" />
 </LinearLayout>

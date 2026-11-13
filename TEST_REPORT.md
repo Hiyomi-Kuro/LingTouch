@@ -168,3 +168,16 @@ bash gradlew --no-daemon \
 - 单元测试：116 项全部通过，0 失败；`WorkFileToolsTest` 6 项通过（新增文件名/MIME 回归测试）。
 - APK：`app/build/outputs/apk/debug/app-debug.apk`（63,446,749 字节），根目录副本 `app-debug.apk`，SHA-256 `99a2cb4a79fb39347f7066f1e1907f039b6fb54b39851b65cd00c8d262a1bb57`。
 - 设备安装与实机测试：按用户要求未执行，交由用户完成。
+
+---
+
+## 11. 2026-11-14 opencode 官网视觉统一
+
+- 目标：让 LingTouch 的界面与配色与 opencode.ai 官网保持一致；安装与实机测试按要求交由用户完成。
+- 色板（浅色 / 深色）：背景 `#FBFBFB` / `#0C0C0C`，表面 `#FFFFFF` / `#161616`，弱表面 `#F5F5F5` / `#1A1A1A`，主文字 `#161616` / `#FAFAFA`，次文字 `#6B6B6B` / `#8F8F8F`，分隔线 `#E0E0E0` / `#2E2E2E`，链接蓝 `#3B5CF6` / `#6B8FFF`，成功 `#239F50` / `#54D483`，警告 `#EB980A` / `#F4B434`，错误 `#DB2424` / `#ED5A5A`。
+- 组件：Material 主题改为墨色主操作 + 单色中性按钮；全局等宽字体；8dp 控件圆角、10dp 卡片圆角、1dp 描边、0 阴影；输入框、聊天气泡、徽章、底部导航、对话框、悬浮状态面板统一为同一套 tokens。
+- 修复：删除 `values-night/themes.xml` 的空主题覆盖，使深色模式真正继承统一主题与夜间色板；工具栏补充标题/副标题字色与返回图标着色。
+- 构建：`BUILD SUCCESSFUL in 5m 44s`，`:app:assembleDebug` 与 `:app:testDebugUnitTest` 同次执行，退出码 0。
+- 单元测试：16 个测试类共 116 项全部通过，0 失败（真实执行，非 NO-SOURCE）。
+- APK：`app/build/outputs/apk/debug/app-debug.apk`（63,452,147 字节），根目录副本 `app-debug.apk`，SHA-256 `fbeb9664fd0269ecc64e974e9c73c6c3f9217d1a758f4b023ccee00801da299f`；另存 `Download/LingTouch-app-debug-opencode-theme.apk`（哈希一致）。
+- 已校验：打包后的资源含浅色/夜间双色板、`monospace` 主题字体与系统栏明暗标记；未安装、未进行实机视觉与交互验证。
